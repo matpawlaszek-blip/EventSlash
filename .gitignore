@@ -136,5 +136,9 @@ crashlytics-build.properties
 # Auto-generated cache in Assets folder
 /[Aa]ssets/[Ss]ceneDependencyCache*
 
-Konfiguracja środowiska/
-"Konfiguracja środowiska"/
+Konfiguracja środowiska/.venv/
+Konfiguracja środowiska/__pycache__/
+*.pyc
+
+Konfiguracja środowiska/raw_recordings/
+Konfiguracja środowiska/Sterowniki do kamery eventowej/

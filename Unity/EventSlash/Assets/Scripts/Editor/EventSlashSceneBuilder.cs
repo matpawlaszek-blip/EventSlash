@@ -1151,27 +1151,15 @@ namespace EventSlash.Editor
             rt.sizeDelta = new Vector2(920f, 220f);
             rt.localRotation = Quaternion.Euler(0f, 0f, 5.5f);
 
-            (string ch, Color col, float x)[] eventLetters =
-            {
-                ("E", new Color(0.66f, 0.30f, 0.88f), -395f),
-                ("V", new Color(0.95f, 0.24f, 0.22f), -305f),
-                ("E", new Color(1.00f, 0.84f, 0.16f), -215f),
-                ("N", new Color(1.00f, 0.54f, 0.12f), -125f),
-                ("T", new Color(0.38f, 0.88f, 0.18f), -35f)
-            };
-
-            // Both EVENT and SLASH now use the exact same ninjaFont (NinjaImpact.ttf) & FontStyle.Italic!
-            foreach (var item in eventLetters)
-            {
-                CreateNinjaText(logoRoot.transform, $"Logo_{item.ch}", item.ch,
-                    ninjaFont, 118, FontStyle.Italic, item.col, new Color(0.14f, 0.05f, 0.01f),
-                    new Vector2(item.x, 2f), new Vector2(130f, 160f), 4.5f);
-            }
+            CreateNinjaText(logoRoot.transform, "Logo_EVENT", "EVENT",
+                ninjaFont, 118, FontStyle.Italic,
+                new Color(1.00f, 0.85f, 0.14f), new Color(0.16f, 0.06f, 0.01f),
+                new Vector2(-195f, 2f), new Vector2(460f, 160f), 4.5f);
 
             CreateNinjaText(logoRoot.transform, "Logo_SLASH", "SLASH",
                 ninjaFont, 118, FontStyle.Italic,
                 new Color(0.94f, 0.97f, 1.0f), new Color(0.08f, 0.10f, 0.14f),
-                new Vector2(235f, 2f), new Vector2(460f, 160f), 4.5f);
+                new Vector2(165f, 2f), new Vector2(460f, 160f), 4.5f);
         }
 
         private static MenuFruitSelector CreateFruitNinjaModeRing(

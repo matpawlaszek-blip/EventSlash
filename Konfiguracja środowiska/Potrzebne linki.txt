@@ -1,0 +1,4 @@
+https://www.python.org/downloads/release/pymanager-264/
+
+Python Packages:
+https://docs.prophesee.ai/4.6.2/installation/windows.html#python-packages
