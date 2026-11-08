@@ -150,6 +150,11 @@ namespace EventSlash
             {
                 try
                 {
+                    string candidate = Path.Combine(cur.FullName, "PythonBackend");
+                    if (Directory.Exists(candidate))
+                    {
+                        return candidate;
+                    }
                     DirectoryInfo[] matches = cur.GetDirectories("Konfiguracja*");
                     if (matches.Length > 0)
                     {
@@ -162,7 +167,7 @@ namespace EventSlash
                 }
                 cur = cur.Parent;
             }
-            return Path.GetFullPath(Path.Combine(Application.dataPath, "../../../Konfiguracja środowiska"));
+            return Path.GetFullPath(Path.Combine(Application.dataPath, "../../../PythonBackend"));
         }
 
         public string GetConfigFilePath(string envDir)

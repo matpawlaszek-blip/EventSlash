@@ -60,7 +60,7 @@ flowchart LR
 
 ---
 
-### 1. Python Event Processing Server (`Konfiguracja środowiska/event_stream_server.py`)
+### 1. Python Event Processing Server (`PythonBackend/event_stream_server.py`)
 
 The Python backend reads raw event packets `(x, y, p, t)` using `metavision_core.event_io.EventsIterator` at `60 FPS` (`delta_t = 16666 μs`) and performs:
 
@@ -122,7 +122,7 @@ EventSlash/
 ├── Blender/
 │   ├── EventSlash_Fruits.blend                # Blender source file for 3D fruit models
 │   └── create_bomb_models.py                  # Script for generating whole & split bomb FBX meshes
-├── Konfiguracja środowiska/
+├── PythonBackend/
 │   ├── event_stream_server.py                 # Python Metavision TCP server & hand tracker
 │   ├── start_env.bat                          # Helper batch script to test Metavision environment
 │   ├── test_live.py / test_offline.py         # Standalone Metavision camera test scripts
@@ -147,8 +147,8 @@ EventSlash/
 When cloning this repository onto a new Windows machine, follow these steps:
 
 ### 1. Install Event Camera Drivers & Metavision SDK
-1. Install the **Prophesee Metavision SDK** (default path: `C:\Program Files\Prophesee`) and **CenturyArks SilkyEvCam plugin** (`C:\Program Files\CenturyArks\plugins`) from `Konfiguracja środowiska/Sterowniki do kamery eventowej/`.
-2. Create a Python virtual environment (`.venv`) compatible with your installed Metavision Python bindings (e.g., inside `Konfiguracja środowiska/.venv`) and install `numpy` and `opencv-python`:
+1. Install the **Prophesee Metavision SDK** (default path: `C:\Program Files\Prophesee`) and **CenturyArks SilkyEvCam plugin** (`C:\Program Files\CenturyArks\plugins`) from `PythonBackend/Sterowniki do kamery eventowej/`.
+2. Create a Python virtual environment (`.venv`) compatible with your installed Metavision Python bindings (e.g., inside `PythonBackend/.venv`) and install `numpy` and `opencv-python`:
    ```powershell
    pip install numpy opencv-python
    ```
@@ -156,7 +156,7 @@ When cloning this repository onto a new Windows machine, follow these steps:
 ### 2. Add a `.raw` Recording (for Offline Mode)
 Place at least one `.raw` recording inside:
 ```text
-Konfiguracja środowiska/raw_recordings/
+PythonBackend/raw_recordings/
 ```
 
 ### 3. Update `config.txt`
@@ -165,7 +165,7 @@ Edit `config.txt` in the root folder of the repository to point to your Python e
 PYTHON_EXE = C:\path\to\your\.venv\Scripts\python.exe
 RAW_FILE = your_recording.raw
 ```
-*(Note: If `PYTHON_EXE` points to the default `Konfiguracja środowiska/.venv/Scripts/python.exe`, it will be detected automatically even if the project is in a different user directory.)*
+*(Note: If `PYTHON_EXE` points to the default `PythonBackend/.venv/Scripts/python.exe`, it will be detected automatically even if the project is in a different user directory.)*
 
 ### 4. Open in Unity & Play
 1. Open `Unity/EventSlash` in **Unity 6** (`6000.3.x` with Universal Render Pipeline).

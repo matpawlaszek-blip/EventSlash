@@ -109,18 +109,14 @@ crashlytics-build.properties
 **/UIElementsSchema/
 **/[Aa]ssets/[Ss]ceneDependencyCache*
 
-# ==================== KONFIGURACJA ŚRODOWISKA (PYTHON & METAVISION) ====================
-Konfiguracja środowiska/.venv/
-Konfiguracja*rodowiska/.venv/
-Konfiguracja środowiska/__pycache__/
-Konfiguracja*rodowiska/__pycache__/
+# ==================== PYTHON BACKEND (PYTHON & METAVISION) ====================
+PythonBackend/.venv/
+PythonBackend/__pycache__/
 **/__pycache__/
 *.pyc
 
-Konfiguracja środowiska/raw_recordings/
-Konfiguracja*rodowiska/raw_recordings/
+PythonBackend/raw_recordings/
 **/raw_recordings/
 
-Konfiguracja środowiska/Sterowniki do kamery eventowej/
-Konfiguracja*rodowiska/Sterowniki do kamery eventowej/
+PythonBackend/Sterowniki do kamery eventowej/
 *.tmp_index
