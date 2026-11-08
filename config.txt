@@ -1,0 +1,17 @@
+# ==============================================================================
+# EventSlash - Plik konfiguracyjny / Configuration File (config.txt)
+# ==============================================================================
+#
+# 1. PYTHON_EXE:
+#    Ścieżka do pliku python.exe w środowisku wirtualnym (.venv).
+#    Możesz wkleić pełną ścieżkę (np. na innym komputerze) lub ścieżkę względną.
+#    (You can paste the full path to python.exe or to the .venv folder).
+#
+PYTHON_EXE = C:\Users\matpa\Desktop\EventSlash\Konfiguracja środowiska\.venv\Scripts\python.exe
+
+# 2. RAW_FILE:
+#    Nazwa pliku .raw znajdującego się w folderze "Konfiguracja środowiska/raw_recordings"
+#    (lub pełna ścieżka do pliku .raw), którego chcesz używać w trybie odtwarzania.
+#    (Name of the .raw file in "raw_recordings" or full path to a .raw file).
+#
+RAW_FILE = recording_2026-11-04_10-58-39.raw
