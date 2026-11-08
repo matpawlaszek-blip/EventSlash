@@ -965,20 +965,38 @@ namespace EventSlash.Editor
                 sprites.GetValueOrDefault("DojoScrollBoard"), Color.white,
                 new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 10f), new Vector2(960f, 720f), true);
 
-            CreateNinjaText(settingsBoard.transform, "SettingsTitle", "USTAWIENIA",
+            Text settingsTitleTxt = CreateNinjaText(settingsBoard.transform, "SettingsTitle", "USTAWIENIA",
                 ninjaImpact, 54, FontStyle.Normal,
                 new Color(1.0f, 0.88f, 0.32f), new Color(0.18f, 0.05f, 0.01f),
                 new Vector2(0f, 282f), new Vector2(640f, 70f), 4.0f);
 
+            Button btnTabGeneral = CreateSpriteButton(settingsBoard.transform, "Btn_TabGeneral",
+                sprites.GetValueOrDefault("WoodBanner"), "OGÓLNE", ninjaImpact, 25,
+                new Color(1.0f, 0.90f, 0.28f), new Vector2(-265f, 205f), new Vector2(245f, 58f));
+
             Button btnTabTracking = CreateSpriteButton(settingsBoard.transform, "Btn_TabTracking",
-                sprites.GetValueOrDefault("WoodBanner"), "TRACKING (ŚLEDZENIE)", ninjaImpact, 24,
-                new Color(1.0f, 0.90f, 0.28f), new Vector2(-190f, 205f), new Vector2(350f, 60f));
+                sprites.GetValueOrDefault("WoodBanner"), "ŚLEDZENIE", ninjaImpact, 25,
+                new Color(0.82f, 0.76f, 0.68f), new Vector2(0f, 205f), new Vector2(245f, 58f));
 
             Button btnTabGame = CreateSpriteButton(settingsBoard.transform, "Btn_TabGame",
-                sprites.GetValueOrDefault("WoodBanner"), "GAME (ROZGRYWKA)", ninjaImpact, 24,
-                new Color(0.82f, 0.76f, 0.68f), new Vector2(190f, 205f), new Vector2(350f, 60f));
+                sprites.GetValueOrDefault("WoodBanner"), "ROZGRYWKA", ninjaImpact, 25,
+                new Color(0.82f, 0.76f, 0.68f), new Vector2(265f, 205f), new Vector2(245f, 58f));
 
-            // --- TAB 1: TRACKING ---
+            // --- TAB 1: GENERAL ---
+            GameObject generalTabPanel = CreateImagePanel(settingsBoard.transform, "GeneralTabPanel",
+                null, Color.clear, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero, false);
+
+            Text languageLabelTxt = CreateNinjaText(generalTabPanel.transform, "LanguageLabelText",
+                "JĘZYK:", ninjaImpact, 30, FontStyle.Normal,
+                new Color(1.0f, 0.96f, 0.84f), new Color(0.16f, 0.06f, 0.02f),
+                new Vector2(0f, 75f), new Vector2(560f, 44f), 2.8f);
+
+            Dropdown languageDropdown = CreateDropdown(generalTabPanel.transform, "LanguageDropdown",
+                sprites.GetValueOrDefault("WoodBanner"), ninjaImpact,
+                new Vector2(0f, 5f), new Vector2(380f, 60f),
+                new List<string> { "English", "Polski" }, 1);
+
+            // --- TAB 2: TRACKING ---
             GameObject trackingTabPanel = CreateImagePanel(settingsBoard.transform, "TrackingTabPanel",
                 null, Color.clear, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero, false);
 
@@ -1059,6 +1077,7 @@ namespace EventSlash.Editor
                 ninjaImpact, 23, new Color(1.0f, 0.95f, 0.82f), new Vector2(0f, -190f), new Vector2(480f, 56f));
             Text bombsToggleLabel = btnToggleBombs.GetComponentInChildren<Text>(true);
 
+            trackingTabPanel.SetActive(false);
             gameTabPanel.SetActive(false);
 
             // --- FOOTER BUTTONS (DOMYŚLNE + ZAMKNIJ) ---
@@ -1147,7 +1166,7 @@ namespace EventSlash.Editor
                 new Color(1.0f, 0.34f, 0.24f), new Color(0.16f, 0.03f, 0.01f),
                 new Vector2(0f, 185f), new Vector2(720f, 88f), 4.0f);
 
-            CreateNinjaText(scrollBoard.transform, "PointsLabel", "ZDOBYTE PUNKTY",
+            Text pointsLabelTxt = CreateNinjaText(scrollBoard.transform, "PointsLabel", "ZDOBYTE PUNKTY",
                 ninjaImpact, 30, FontStyle.Normal,
                 new Color(1.0f, 0.90f, 0.72f), new Color(0.16f, 0.05f, 0.01f),
                 new Vector2(0f, 85f), new Vector2(520f, 44f), 2.5f);
@@ -1187,16 +1206,23 @@ namespace EventSlash.Editor
             gameMgr.comboPopupText = comboMainTxt;
 
             gameMgr.gameOverTitleText = overTitleTxt;
+            gameMgr.pointsLabelText = pointsLabelTxt;
             gameMgr.gameOverScoreText = overScoreTxt;
             gameMgr.gameOverBestText = overBestTxt;
 
             gameMgr.menuStatusText = menuStatus;
             gameMgr.menuProfileBestText = profileBestText;
+            gameMgr.settingsTitleText = settingsTitleTxt;
+            gameMgr.generalTabPanel = generalTabPanel;
             gameMgr.trackingTabPanel = trackingTabPanel;
             gameMgr.gameTabPanel = gameTabPanel;
+            gameMgr.btnTabGeneral = btnTabGeneral;
             gameMgr.btnTabTracking = btnTabTracking;
             gameMgr.btnTabGame = btnTabGame;
             gameMgr.btnResetDefaults = btnResetDefaults;
+
+            gameMgr.languageLabelText = languageLabelTxt;
+            gameMgr.languageDropdown = languageDropdown;
 
             gameMgr.minHandSpeedSlider = minSpeedSlider;
             gameMgr.minHandSpeedValueText = minSpeedLabel;
@@ -1499,6 +1525,123 @@ namespace EventSlash.Editor
             slider.value = defaultVal;
 
             return slider;
+        }
+
+        private static Dropdown CreateDropdown(
+            Transform parent,
+            string name,
+            Sprite bgSprite,
+            Font font,
+            Vector2 anchoredPos,
+            Vector2 sizeDelta,
+            List<string> options,
+            int defaultIndex)
+        {
+            GameObject ddObj = new GameObject(name);
+            ddObj.transform.SetParent(parent, false);
+            RectTransform rt = ddObj.AddComponent<RectTransform>();
+            rt.anchorMin = new Vector2(0.5f, 0.5f);
+            rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.anchoredPosition = anchoredPos;
+            rt.sizeDelta = sizeDelta;
+
+            Image bgImg = ddObj.AddComponent<Image>();
+            bgImg.sprite = bgSprite;
+            bgImg.color = bgSprite != null ? Color.white : new Color(0.32f, 0.17f, 0.07f, 0.98f);
+            bgImg.raycastTarget = true;
+
+            Dropdown dd = ddObj.AddComponent<Dropdown>();
+            dd.targetGraphic = bgImg;
+
+            Text captionLabel = CreateNinjaText(ddObj.transform, "Label",
+                options[Mathf.Clamp(defaultIndex, 0, options.Count - 1)], font, 26, FontStyle.Normal,
+                new Color(1.0f, 0.94f, 0.58f), new Color(0.16f, 0.05f, 0.01f),
+                new Vector2(-15f, 0f), new Vector2(sizeDelta.x - 60f, sizeDelta.y), 2.8f);
+
+            CreateNinjaText(ddObj.transform, "Arrow", "▼", font, 22, FontStyle.Normal,
+                new Color(1.0f, 0.88f, 0.32f), new Color(0.16f, 0.05f, 0.01f),
+                new Vector2(sizeDelta.x * 0.5f - 34f, 0f), new Vector2(40f, sizeDelta.y), 2.5f);
+
+            GameObject template = new GameObject("Template");
+            template.transform.SetParent(ddObj.transform, false);
+            RectTransform tmplRt = template.AddComponent<RectTransform>();
+            tmplRt.anchorMin = new Vector2(0f, 0f);
+            tmplRt.anchorMax = new Vector2(1f, 0f);
+            tmplRt.pivot = new Vector2(0.5f, 1f);
+            tmplRt.anchoredPosition = new Vector2(0f, -4f);
+            tmplRt.sizeDelta = new Vector2(0f, 124f);
+
+            Image tmplImg = template.AddComponent<Image>();
+            tmplImg.color = new Color(0.18f, 0.09f, 0.03f, 0.98f);
+
+            ScrollRect sr = template.AddComponent<ScrollRect>();
+            sr.horizontal = false;
+            sr.vertical = true;
+            sr.movementType = ScrollRect.MovementType.Clamped;
+
+            GameObject viewport = new GameObject("Viewport");
+            viewport.transform.SetParent(template.transform, false);
+            RectTransform vpRt = viewport.AddComponent<RectTransform>();
+            vpRt.anchorMin = Vector2.zero;
+            vpRt.anchorMax = Vector2.one;
+            vpRt.sizeDelta = Vector2.zero;
+            vpRt.pivot = new Vector2(0f, 1f);
+
+            Mask mask = viewport.AddComponent<Mask>();
+            mask.showMaskGraphic = false;
+            Image vpImg = viewport.AddComponent<Image>();
+            vpImg.color = Color.white;
+
+            GameObject content = new GameObject("Content");
+            content.transform.SetParent(viewport.transform, false);
+            RectTransform contentRt = content.AddComponent<RectTransform>();
+            contentRt.anchorMin = new Vector2(0f, 1f);
+            contentRt.anchorMax = new Vector2(1f, 1f);
+            contentRt.pivot = new Vector2(0.5f, 1f);
+            contentRt.anchoredPosition = Vector2.zero;
+            contentRt.sizeDelta = new Vector2(0f, 60f);
+
+            GameObject item = new GameObject("Item");
+            item.transform.SetParent(content.transform, false);
+            RectTransform itemRt = item.AddComponent<RectTransform>();
+            itemRt.anchorMin = new Vector2(0f, 0.5f);
+            itemRt.anchorMax = new Vector2(1f, 0.5f);
+            itemRt.pivot = new Vector2(0.5f, 0.5f);
+            itemRt.anchoredPosition = Vector2.zero;
+            itemRt.sizeDelta = new Vector2(0f, 58f);
+
+            GameObject itemBg = CreateImagePanel(item.transform, "Item Background",
+                null, new Color(0.28f, 0.15f, 0.06f, 0.98f),
+                Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero, true);
+            Image itemBgImg = itemBg.GetComponent<Image>();
+
+            Text itemCheck = CreateNinjaText(item.transform, "Item Checkmark", "✔", font, 22, FontStyle.Normal,
+                new Color(0.40f, 0.96f, 0.32f), new Color(0.08f, 0.18f, 0.04f),
+                new Vector2(-sizeDelta.x * 0.5f + 32f, 0f), new Vector2(40f, 54f), 2.5f);
+
+            Text itemLabel = CreateNinjaText(item.transform, "Item Label", "Option", font, 24, FontStyle.Normal,
+                new Color(1.0f, 0.96f, 0.84f), new Color(0.16f, 0.05f, 0.01f),
+                Vector2.zero, new Vector2(sizeDelta.x - 80f, 54f), 2.5f);
+
+            Toggle itemToggle = item.AddComponent<Toggle>();
+            itemToggle.targetGraphic = itemBgImg;
+            itemToggle.graphic = itemCheck;
+            itemToggle.isOn = true;
+
+            sr.content = contentRt;
+            sr.viewport = vpRt;
+
+            dd.template = tmplRt;
+            dd.captionText = captionLabel;
+            dd.itemText = itemLabel;
+            dd.ClearOptions();
+            dd.AddOptions(options);
+            dd.SetValueWithoutNotify(Mathf.Clamp(defaultIndex, 0, options.Count - 1));
+            dd.RefreshShownValue();
+
+            template.SetActive(false);
+            return dd;
         }
     }
 }

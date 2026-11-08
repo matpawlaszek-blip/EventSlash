@@ -30,6 +30,7 @@ namespace EventSlash
 
     public enum SettingsTab
     {
+        General,
         Tracking,
         Game
     }
@@ -38,12 +39,17 @@ namespace EventSlash
     {
         public static EventSlashGameManager Instance { get; private set; }
 
+        public const int DefaultLanguageIndex = 1; // 0 = English, 1 = Polski
         public const bool DefaultBombsEnabled = true;
         public const float DefaultBombSpawnChance = 0.18f;
         public const float DefaultSpawnRateMultiplier = 1.0f;
         public const float DefaultFruitSizeMultiplier = 1.0f;
         public const int DefaultMaxLives = 3;
         public const bool DefaultLivesEnabled = true;
+
+        [Header("General Settings")]
+        [Tooltip("0 = English, 1 = Polski")]
+        public int languageIndex = DefaultLanguageIndex;
 
         [Header("Fruit Prefabs (Whole + Sliced Halves)")]
         public List<FruitDefinition> fruitTypes = new List<FruitDefinition>();
@@ -94,17 +100,25 @@ namespace EventSlash
 
         [Header("Game Over Summary Elements")]
         public Text gameOverTitleText;
+        public Text pointsLabelText;
         public Text gameOverScoreText;
         public Text gameOverBestText;
 
         [Header("Menu & Settings Tabs")]
         public Text menuStatusText;
         public Text menuProfileBestText;
+        public Text settingsTitleText;
+        public GameObject generalTabPanel;
         public GameObject trackingTabPanel;
         public GameObject gameTabPanel;
+        public Button btnTabGeneral;
         public Button btnTabTracking;
         public Button btnTabGame;
         public Button btnResetDefaults;
+
+        [Header("General Tab UI Elements")]
+        public Text languageLabelText;
+        public Dropdown languageDropdown;
 
         [Header("Tracking Tab UI Elements")]
         public Slider minHandSpeedSlider;
@@ -144,7 +158,7 @@ namespace EventSlash
         public Button btnToggleSettings;
         public Button btnCloseSettings;
 
-        private SettingsTab _activeSettingsTab = SettingsTab.Tracking;
+        private SettingsTab _activeSettingsTab = SettingsTab.General;
         private float _nextSpawnTimer;
         private float _lastSliceTime;
         private int _comboCount;
@@ -153,6 +167,9 @@ namespace EventSlash
         private Vector2 _comboBaseAnchoredPos = new Vector2(0f, 315f);
         private float _scorePopTimer;
         private int _wavesSinceLastBomb;
+        private bool _lastGameOverWasBomb;
+
+        public bool IsEnglish => languageIndex == 0;
 
         private void Awake()
         {
@@ -174,13 +191,14 @@ namespace EventSlash
             }
             EnsureUIWired();
             SyncAllSettingsUI();
-            SelectSettingsTab(SettingsTab.Tracking);
+            SelectSettingsTab(SettingsTab.General);
             ShowMainMenu();
         }
 
         private void LoadSavedSettings()
         {
             bestScore = PlayerPrefs.GetInt("EventSlash_BestScore", 0);
+            languageIndex = Mathf.Clamp(PlayerPrefs.GetInt("EventSlash_Language", DefaultLanguageIndex), 0, 1);
 
             // Game tab settings
             bombsEnabled = PlayerPrefs.GetInt("EventSlash_BombsEnabled", DefaultBombsEnabled ? 1 : 0) == 1;
@@ -205,46 +223,220 @@ namespace EventSlash
 
         public void ResetSettingsToDefaults()
         {
-            // Reset Game settings
-            bombsEnabled = DefaultBombsEnabled;
-            bombSpawnChance = DefaultBombSpawnChance;
-            spawnRateMultiplier = DefaultSpawnRateMultiplier;
-            fruitSizeMultiplier = DefaultFruitSizeMultiplier;
-            maxLives = DefaultMaxLives;
-            livesEnabled = DefaultLivesEnabled;
-
-            PlayerPrefs.SetInt("EventSlash_BombsEnabled", bombsEnabled ? 1 : 0);
-            PlayerPrefs.SetFloat("EventSlash_BombChance", bombSpawnChance);
-            PlayerPrefs.SetFloat("EventSlash_SpawnRate", spawnRateMultiplier);
-            PlayerPrefs.SetFloat("EventSlash_FruitSize", fruitSizeMultiplier);
-            PlayerPrefs.SetInt("EventSlash_MaxLives", maxLives);
-            PlayerPrefs.SetInt("EventSlash_LivesEnabled", livesEnabled ? 1 : 0);
-
-            // Reset Tracking settings
-            if (EventCameraManager.Instance != null)
+            switch (_activeSettingsTab)
             {
-                EventCameraManager cam = EventCameraManager.Instance;
-                cam.sensitivity = EventCameraManager.DefaultSensitivity;
-                cam.minHandSpeed = EventCameraManager.DefaultMinHandSpeed;
-                cam.minHandThickness = EventCameraManager.DefaultMinHandThickness;
-                cam.maxHands = EventCameraManager.DefaultMaxHands;
-                cam.swayFilterEnabled = EventCameraManager.DefaultSwayFilterEnabled;
-                cam.denoiseEnabled = EventCameraManager.DefaultDenoiseEnabled;
+                case SettingsTab.General:
+                    languageIndex = DefaultLanguageIndex;
+                    PlayerPrefs.SetInt("EventSlash_Language", languageIndex);
+                    break;
 
-                PlayerPrefs.SetFloat("EventSlash_Sensitivity", cam.sensitivity);
-                PlayerPrefs.SetFloat("EventSlash_MinHandSpeed", cam.minHandSpeed);
-                PlayerPrefs.SetFloat("EventSlash_MinHandThickness", cam.minHandThickness);
-                PlayerPrefs.SetInt("EventSlash_MaxHands", cam.maxHands);
-                PlayerPrefs.SetInt("EventSlash_SwayFilter", cam.swayFilterEnabled ? 1 : 0);
-                PlayerPrefs.SetInt("EventSlash_DenoiseEnabled", cam.denoiseEnabled ? 1 : 0);
+                case SettingsTab.Tracking:
+                    if (EventCameraManager.Instance != null)
+                    {
+                        EventCameraManager cam = EventCameraManager.Instance;
+                        cam.sensitivity = EventCameraManager.DefaultSensitivity;
+                        cam.minHandSpeed = EventCameraManager.DefaultMinHandSpeed;
+                        cam.minHandThickness = EventCameraManager.DefaultMinHandThickness;
+                        cam.maxHands = EventCameraManager.DefaultMaxHands;
+                        cam.swayFilterEnabled = EventCameraManager.DefaultSwayFilterEnabled;
+                        cam.denoiseEnabled = EventCameraManager.DefaultDenoiseEnabled;
+
+                        PlayerPrefs.SetFloat("EventSlash_Sensitivity", cam.sensitivity);
+                        PlayerPrefs.SetFloat("EventSlash_MinHandSpeed", cam.minHandSpeed);
+                        PlayerPrefs.SetFloat("EventSlash_MinHandThickness", cam.minHandThickness);
+                        PlayerPrefs.SetInt("EventSlash_MaxHands", cam.maxHands);
+                        PlayerPrefs.SetInt("EventSlash_SwayFilter", cam.swayFilterEnabled ? 1 : 0);
+                        PlayerPrefs.SetInt("EventSlash_DenoiseEnabled", cam.denoiseEnabled ? 1 : 0);
+                    }
+                    break;
+
+                case SettingsTab.Game:
+                    bombsEnabled = DefaultBombsEnabled;
+                    bombSpawnChance = DefaultBombSpawnChance;
+                    spawnRateMultiplier = DefaultSpawnRateMultiplier;
+                    fruitSizeMultiplier = DefaultFruitSizeMultiplier;
+                    maxLives = DefaultMaxLives;
+                    livesEnabled = DefaultLivesEnabled;
+
+                    PlayerPrefs.SetInt("EventSlash_BombsEnabled", bombsEnabled ? 1 : 0);
+                    PlayerPrefs.SetFloat("EventSlash_BombChance", bombSpawnChance);
+                    PlayerPrefs.SetFloat("EventSlash_SpawnRate", spawnRateMultiplier);
+                    PlayerPrefs.SetFloat("EventSlash_FruitSize", fruitSizeMultiplier);
+                    PlayerPrefs.SetInt("EventSlash_MaxLives", maxLives);
+                    PlayerPrefs.SetInt("EventSlash_LivesEnabled", livesEnabled ? 1 : 0);
+                    break;
             }
 
             PlayerPrefs.Save();
             SyncAllSettingsUI();
         }
 
+        private string GetLocalizedFruitName(string rawName)
+        {
+            if (string.IsNullOrEmpty(rawName))
+            {
+                return IsEnglish ? "FRUIT" : "OWOC";
+            }
+
+            string upper = rawName.Trim().ToUpperInvariant();
+            if (IsEnglish)
+            {
+                switch (upper)
+                {
+                    case "ARBUZ":
+                    case "WATERMELON":
+                        return "WATERMELON";
+                    case "JABŁKO":
+                    case "JABLKO":
+                    case "APPLE":
+                        return "APPLE";
+                    case "POMARAŃCZA":
+                    case "POMARANCZA":
+                    case "ORANGE":
+                        return "ORANGE";
+                    case "BANAN":
+                    case "BANANA":
+                        return "BANANA";
+                    case "BOMBA":
+                    case "BOMB":
+                        return "BOMB";
+                    default:
+                        return upper;
+                }
+            }
+            else
+            {
+                switch (upper)
+                {
+                    case "WATERMELON":
+                    case "ARBUZ":
+                        return "ARBUZ";
+                    case "APPLE":
+                    case "JABŁKO":
+                    case "JABLKO":
+                        return "JABŁKO";
+                    case "ORANGE":
+                    case "POMARAŃCZA":
+                    case "POMARANCZA":
+                        return "POMARAŃCZA";
+                    case "BANANA":
+                    case "BANAN":
+                        return "BANAN";
+                    case "BOMB":
+                    case "BOMBA":
+                        return "BOMBA";
+                    default:
+                        return upper;
+                }
+            }
+        }
+
         private void SyncAllSettingsUI()
         {
+            if (languageDropdown != null)
+            {
+                languageDropdown.SetValueWithoutNotify(Mathf.Clamp(languageIndex, 0, 1));
+                languageDropdown.RefreshShownValue();
+            }
+
+            if (settingsTitleText != null)
+            {
+                settingsTitleText.text = IsEnglish ? "SETTINGS" : "USTAWIENIA";
+            }
+            if (languageLabelText != null)
+            {
+                languageLabelText.text = IsEnglish ? "LANGUAGE:" : "JĘZYK:";
+            }
+
+            if (btnTabGeneral != null)
+            {
+                Text l = btnTabGeneral.GetComponentInChildren<Text>(true);
+                if (l != null) l.text = IsEnglish ? "GENERAL" : "OGÓLNE";
+            }
+            if (btnTabTracking != null)
+            {
+                Text l = btnTabTracking.GetComponentInChildren<Text>(true);
+                if (l != null) l.text = IsEnglish ? "TRACKING" : "ŚLEDZENIE";
+            }
+            if (btnTabGame != null)
+            {
+                Text l = btnTabGame.GetComponentInChildren<Text>(true);
+                if (l != null) l.text = IsEnglish ? "GAME" : "ROZGRYWKA";
+            }
+
+            if (btnResetDefaults != null)
+            {
+                Text rTxt = btnResetDefaults.GetComponentInChildren<Text>(true);
+                if (rTxt != null) rTxt.text = IsEnglish ? "DEFAULT" : "DOMYŚLNE";
+            }
+            if (btnCloseSettings != null)
+            {
+                Text cTxt = btnCloseSettings.GetComponentInChildren<Text>(true);
+                if (cTxt != null) cTxt.text = IsEnglish ? "CLOSE" : "ZAMKNIJ";
+            }
+            if (btnGameOverMenu != null)
+            {
+                Text goTxt = btnGameOverMenu.GetComponentInChildren<Text>(true);
+                if (goTxt != null) goTxt.text = IsEnglish ? "BACK TO MENU" : "POWRÓT DO MENU";
+            }
+            if (btnHudBackToMenu != null)
+            {
+                Text hudMenuTxt = btnHudBackToMenu.GetComponentInChildren<Text>(true);
+                if (hudMenuTxt != null) hudMenuTxt.text = "MENU [ESC]";
+            }
+
+            if (pointsLabelText != null)
+            {
+                pointsLabelText.text = IsEnglish ? "POINTS SCORED" : "ZDOBYTE PUNKTY";
+            }
+            if (gameOverTitleText != null)
+            {
+                if (_lastGameOverWasBomb)
+                {
+                    gameOverTitleText.text = IsEnglish ? "BOMB EXPLOSION!" : "WYBUCH BOMBY!";
+                }
+                else
+                {
+                    gameOverTitleText.text = IsEnglish ? "GAME OVER" : "KONIEC GRY";
+                }
+            }
+            if (gameOverBestText != null)
+            {
+                gameOverBestText.text = IsEnglish
+                    ? $"BEST SCORE: {bestScore}"
+                    : $"NAJLEPSZY WYNIK: {bestScore}";
+            }
+            if (bestScoreHudText != null)
+            {
+                bestScoreHudText.text = IsEnglish ? $"BEST: {bestScore}" : $"REKORD: {bestScore}";
+            }
+            if (menuProfileBestText != null)
+            {
+                menuProfileBestText.text = IsEnglish
+                    ? $"NINJA PROFILE  •  BEST: {bestScore}"
+                    : $"PROFIL NINJA  •  REKORD: {bestScore}";
+            }
+            if (menuStatusText != null)
+            {
+                string rawFile = EventCameraManager.Instance != null ? EventCameraManager.Instance.activeRawFileName : "hand_test.raw";
+                menuStatusText.text = IsEnglish
+                    ? $"Slash a fruit with your hand to start! (RAW file: {rawFile})"
+                    : $"Przeciągnij ostrzem przez wybrany owoc, aby rozpocząć! (Plik RAW: {rawFile})";
+            }
+
+            if (liveModeSelector != null)
+            {
+                string liveText = IsEnglish ? "LIVE CAMERA" : "KAMERA LIVE";
+                liveModeSelector.SetArcTexts(liveText, liveText);
+            }
+            if (rawModeSelector != null)
+            {
+                rawModeSelector.SetArcTexts(
+                    IsEnglish ? "OFFLINE MODE" : "TRYB OFFLINE",
+                    IsEnglish ? "RAW FILE" : "PLIK RAW"
+                );
+            }
+
             EventCameraManager cam = EventCameraManager.Instance;
             float sens = cam != null ? cam.sensitivity : EventCameraManager.DefaultSensitivity;
             float minSpd = cam != null ? cam.minHandSpeed : EventCameraManager.DefaultMinHandSpeed;
@@ -278,6 +470,11 @@ namespace EventSlash
             UpdateBombsToggleUI();
         }
 
+        public void SelectGeneralTab()
+        {
+            SelectSettingsTab(SettingsTab.General);
+        }
+
         public void SelectTrackingTab()
         {
             SelectSettingsTab(SettingsTab.Tracking);
@@ -291,9 +488,11 @@ namespace EventSlash
         public void SelectSettingsTab(SettingsTab tab)
         {
             _activeSettingsTab = tab;
+            if (generalTabPanel != null) generalTabPanel.SetActive(tab == SettingsTab.General);
             if (trackingTabPanel != null) trackingTabPanel.SetActive(tab == SettingsTab.Tracking);
             if (gameTabPanel != null) gameTabPanel.SetActive(tab == SettingsTab.Game);
 
+            UpdateTabButtonVisual(btnTabGeneral, tab == SettingsTab.General);
             UpdateTabButtonVisual(btnTabTracking, tab == SettingsTab.Tracking);
             UpdateTabButtonVisual(btnTabGame, tab == SettingsTab.Game);
         }
@@ -345,11 +544,15 @@ namespace EventSlash
             {
                 if (menuProfileBestText != null)
                 {
-                    menuProfileBestText.text = $"PROFIL NINJA  •  REKORD: {bestScore}";
+                    menuProfileBestText.text = IsEnglish
+                        ? $"NINJA PROFILE  •  BEST: {bestScore}"
+                        : $"PROFIL NINJA  •  REKORD: {bestScore}";
                 }
                 if (menuStatusText != null && EventCameraManager.Instance != null)
                 {
-                    menuStatusText.text = $"Przeciągnij ostrzem przez wybrany owoc, aby rozpocząć! (Plik RAW: {EventCameraManager.Instance.activeRawFileName})";
+                    menuStatusText.text = IsEnglish
+                        ? $"Slash a fruit with your hand to start! (RAW file: {EventCameraManager.Instance.activeRawFileName})"
+                        : $"Przeciągnij ostrzem przez wybrany owoc, aby rozpocząć! (Plik RAW: {EventCameraManager.Instance.activeRawFileName})";
                 }
                 return;
             }
@@ -481,11 +684,17 @@ namespace EventSlash
             if (liveModeSelector != null)
             {
                 liveModeSelector.gameObject.SetActive(true);
+                string liveText = IsEnglish ? "LIVE CAMERA" : "KAMERA LIVE";
+                liveModeSelector.SetArcTexts(liveText, liveText);
                 liveModeSelector.Initialize(StartLiveCameraGame);
             }
             if (rawModeSelector != null)
             {
                 rawModeSelector.gameObject.SetActive(true);
+                rawModeSelector.SetArcTexts(
+                    IsEnglish ? "OFFLINE MODE" : "TRYB OFFLINE",
+                    IsEnglish ? "RAW FILE" : "PLIK RAW"
+                );
                 rawModeSelector.Initialize(StartTestRawRecordingGame);
             }
         }
@@ -668,8 +877,8 @@ namespace EventSlash
             if (_comboCount >= 2)
             {
                 ShowNinjaCallout(
-                    "TECHNIKA NINJA!",
-                    $"COMBO x{_comboCount}!   +{gained} PKT",
+                    IsEnglish ? "NINJA TECHNIQUE!" : "TECHNIKA NINJA!",
+                    IsEnglish ? $"COMBO x{_comboCount}!   +{gained} PTS" : $"KOMBO x{_comboCount}!   +{gained} PKT",
                     new Color(1.0f, 0.38f, 0.16f),
                     new Color(1.0f, 0.90f, 0.20f),
                     1.25f
@@ -678,8 +887,8 @@ namespace EventSlash
             else
             {
                 ShowNinjaCallout(
-                    "CIĘCIE NINJA!",
-                    $"+{gained}   {fruit.fruitName.ToUpper()}",
+                    IsEnglish ? "NINJA SLASH!" : "CIĘCIE NINJA!",
+                    $"+{gained}   {GetLocalizedFruitName(fruit.fruitName)}",
                     new Color(0.35f, 0.95f, 1.0f),
                     new Color(1.0f, 0.94f, 0.42f),
                     0.95f
@@ -692,7 +901,8 @@ namespace EventSlash
         public void OnBombSliced(FruitItem bomb, Vector3 worldPos)
         {
             if (currentState != GameState.Playing) return;
-            TriggerGameOver("WYBUCH BOMBY!");
+            _lastGameOverWasBomb = true;
+            TriggerGameOver(IsEnglish ? "BOMB EXPLOSION!" : "WYBUCH BOMBY!");
         }
 
         public void OnFruitMissed(FruitItem fruit)
@@ -704,8 +914,8 @@ namespace EventSlash
 
             lives--;
             ShowNinjaCallout(
-                "UTRATA ŻYCIA!",
-                "UPUSZCZONO OWOC! (-1)",
+                IsEnglish ? "LIFE LOST!" : "UTRATA ŻYCIA!",
+                IsEnglish ? "FRUIT DROPPED! (-1)" : "UPUSZCZONO OWOC! (-1)",
                 new Color(1.0f, 0.28f, 0.24f),
                 new Color(1.0f, 0.55f, 0.45f),
                 1.15f
@@ -715,7 +925,8 @@ namespace EventSlash
 
             if (lives <= 0)
             {
-                TriggerGameOver("KONIEC GRY");
+                _lastGameOverWasBomb = false;
+                TriggerGameOver(IsEnglish ? "GAME OVER" : "KONIEC GRY");
             }
         }
 
@@ -740,13 +951,19 @@ namespace EventSlash
             {
                 gameOverTitleText.text = titleReason;
             }
+            if (pointsLabelText != null)
+            {
+                pointsLabelText.text = IsEnglish ? "POINTS SCORED" : "ZDOBYTE PUNKTY";
+            }
             if (gameOverScoreText != null)
             {
                 gameOverScoreText.text = $"{score}";
             }
             if (gameOverBestText != null)
             {
-                gameOverBestText.text = $"NAJLEPSZY WYNIK: {bestScore}";
+                gameOverBestText.text = IsEnglish
+                    ? $"BEST SCORE: {bestScore}"
+                    : $"NAJLEPSZY WYNIK: {bestScore}";
             }
         }
 
@@ -758,7 +975,7 @@ namespace EventSlash
             }
             if (bestScoreHudText != null)
             {
-                bestScoreHudText.text = $"REKORD: {bestScore}";
+                bestScoreHudText.text = IsEnglish ? $"BEST: {bestScore}" : $"REKORD: {bestScore}";
             }
 
             if (livesText != null)
@@ -800,6 +1017,16 @@ namespace EventSlash
             }
         }
 
+        // ==================== GENERAL TAB HANDLERS ====================
+
+        public void OnLanguageChanged(int index)
+        {
+            languageIndex = Mathf.Clamp(index, 0, 1);
+            PlayerPrefs.SetInt("EventSlash_Language", languageIndex);
+            PlayerPrefs.Save();
+            SyncAllSettingsUI();
+        }
+
         // ==================== TRACKING TAB HANDLERS ====================
 
         public void OnMinHandSpeedChanged(float val)
@@ -812,7 +1039,9 @@ namespace EventSlash
             PlayerPrefs.SetFloat("EventSlash_MinHandSpeed", clamped);
             if (minHandSpeedValueText != null)
             {
-                minHandSpeedValueText.text = $"MIN. PRĘDKOŚĆ RUCHU DŁONI: {clamped:F0} px/s";
+                minHandSpeedValueText.text = IsEnglish
+                    ? $"MIN. HAND SPEED: {clamped:F0} px/s"
+                    : $"MIN. PRĘDKOŚĆ RUCHU DŁONI: {clamped:F0} px/s";
             }
         }
 
@@ -826,7 +1055,9 @@ namespace EventSlash
             PlayerPrefs.SetFloat("EventSlash_MinHandThickness", clamped);
             if (minHandThicknessValueText != null)
             {
-                minHandThicknessValueText.text = $"GĘSTOŚĆ DETEKCJI DŁONI: {clamped:F0}";
+                minHandThicknessValueText.text = IsEnglish
+                    ? $"HAND DETECTION DENSITY: {clamped:F0}"
+                    : $"GĘSTOŚĆ DETEKCJI DŁONI: {clamped:F0}";
             }
         }
 
@@ -840,7 +1071,9 @@ namespace EventSlash
             PlayerPrefs.SetFloat("EventSlash_Sensitivity", clamped);
             if (sensitivityValueText != null)
             {
-                sensitivityValueText.text = $"PROMIEŃ CIĘCIA DŁONI: {clamped:F1}x";
+                sensitivityValueText.text = IsEnglish
+                    ? $"BLADE HIT RADIUS: {clamped:F1}x"
+                    : $"PROMIEŃ CIĘCIA DŁONI: {clamped:F1}x";
             }
         }
 
@@ -857,9 +1090,18 @@ namespace EventSlash
             int mh = EventCameraManager.Instance != null ? EventCameraManager.Instance.maxHands : EventCameraManager.DefaultMaxHands;
             if (maxHandsToggleText != null)
             {
-                maxHandsToggleText.text = mh >= 2
-                    ? "MAKS. DŁONIE: <color=#65FF45>2 DŁONIE</color>"
-                    : "MAKS. DŁONIE: <color=#FFD245>1 DŁOŃ</color>";
+                if (IsEnglish)
+                {
+                    maxHandsToggleText.text = mh >= 2
+                        ? "MAX HANDS: <color=#65FF45>2 HANDS</color>"
+                        : "MAX HANDS: <color=#FFD245>1 HAND</color>";
+                }
+                else
+                {
+                    maxHandsToggleText.text = mh >= 2
+                        ? "MAKS. DŁONIE: <color=#65FF45>2 DŁONIE</color>"
+                        : "MAKS. DŁONIE: <color=#FFD245>1 DŁOŃ</color>";
+                }
             }
         }
 
@@ -876,9 +1118,18 @@ namespace EventSlash
             bool enabled = EventCameraManager.Instance == null || EventCameraManager.Instance.swayFilterEnabled;
             if (swayFilterToggleText != null)
             {
-                swayFilterToggleText.text = enabled
-                    ? "FILTR CIAŁA: <color=#65FF45>WŁĄCZONY</color>"
-                    : "FILTR CIAŁA: <color=#FF5545>WYŁĄCZONY</color>";
+                if (IsEnglish)
+                {
+                    swayFilterToggleText.text = enabled
+                        ? "BODY FILTER: <color=#65FF45>ON</color>"
+                        : "BODY FILTER: <color=#FF5545>OFF</color>";
+                }
+                else
+                {
+                    swayFilterToggleText.text = enabled
+                        ? "FILTR CIAŁA: <color=#65FF45>WŁĄCZONY</color>"
+                        : "FILTR CIAŁA: <color=#FF5545>WYŁĄCZONY</color>";
+                }
             }
         }
 
@@ -895,9 +1146,18 @@ namespace EventSlash
             bool enabled = EventCameraManager.Instance == null || EventCameraManager.Instance.denoiseEnabled;
             if (denoiseToggleText != null)
             {
-                denoiseToggleText.text = enabled
-                    ? "REDUKCJA SZUMU: <color=#65FF45>WŁĄCZONA</color>"
-                    : "REDUKCJA SZUMU: <color=#FF5545>WYŁĄCZONA</color>";
+                if (IsEnglish)
+                {
+                    denoiseToggleText.text = enabled
+                        ? "NOISE REDUCTION: <color=#65FF45>ON</color>"
+                        : "NOISE REDUCTION: <color=#FF5545>OFF</color>";
+                }
+                else
+                {
+                    denoiseToggleText.text = enabled
+                        ? "REDUKCJA SZUMU: <color=#65FF45>WŁĄCZONA</color>"
+                        : "REDUKCJA SZUMU: <color=#FF5545>WYŁĄCZONA</color>";
+                }
             }
         }
 
@@ -909,7 +1169,9 @@ namespace EventSlash
             PlayerPrefs.SetFloat("EventSlash_SpawnRate", spawnRateMultiplier);
             if (spawnRateValueText != null)
             {
-                spawnRateValueText.text = $"TEMPO WYRZUTU OWOCÓW: {spawnRateMultiplier:F1}x";
+                spawnRateValueText.text = IsEnglish
+                    ? $"FRUIT SPAWN TEMPO: {spawnRateMultiplier:F1}x"
+                    : $"TEMPO WYRZUTU OWOCÓW: {spawnRateMultiplier:F1}x";
             }
         }
 
@@ -919,7 +1181,9 @@ namespace EventSlash
             PlayerPrefs.SetFloat("EventSlash_FruitSize", fruitSizeMultiplier);
             if (fruitSizeValueText != null)
             {
-                fruitSizeValueText.text = $"ROZMIAR OWOCÓW: {fruitSizeMultiplier:F1}x";
+                fruitSizeValueText.text = IsEnglish
+                    ? $"FRUIT SIZE: {fruitSizeMultiplier:F1}x"
+                    : $"ROZMIAR OWOCÓW: {fruitSizeMultiplier:F1}x";
             }
         }
 
@@ -945,9 +1209,18 @@ namespace EventSlash
             }
             if (maxLivesValueText != null)
             {
-                maxLivesValueText.text = livesEnabled
-                    ? $"LICZBA ŻYĆ NA START: {maxLives} ♥"
-                    : "LICZBA ŻYĆ NA START: <color=#FFD245>WYŁĄCZONE (BEZ UTRATY)</color>";
+                if (IsEnglish)
+                {
+                    maxLivesValueText.text = livesEnabled
+                        ? $"STARTING LIVES: {maxLives} ♥"
+                        : "STARTING LIVES: <color=#FFD245>DISABLED</color>";
+                }
+                else
+                {
+                    maxLivesValueText.text = livesEnabled
+                        ? $"LICZBA ŻYĆ NA START: {maxLives} ♥"
+                        : "LICZBA ŻYĆ NA START: <color=#FFD245>WYŁĄCZONE</color>";
+                }
             }
             if (livesToggleText != null)
             {
@@ -963,7 +1236,9 @@ namespace EventSlash
             PlayerPrefs.SetFloat("EventSlash_BombChance", bombSpawnChance);
             if (bombChanceValueText != null)
             {
-                bombChanceValueText.text = $"CZĘSTOTLIWOŚĆ BOMB: {Mathf.RoundToInt(bombSpawnChance * 100f)}%";
+                bombChanceValueText.text = IsEnglish
+                    ? $"BOMB FREQUENCY: {Mathf.RoundToInt(bombSpawnChance * 100f)}%"
+                    : $"CZĘSTOTLIWOŚĆ BOMB: {Mathf.RoundToInt(bombSpawnChance * 100f)}%";
             }
         }
 
@@ -978,9 +1253,18 @@ namespace EventSlash
         {
             if (bombsToggleText != null)
             {
-                bombsToggleText.text = bombsEnabled
-                    ? "BOMBY W GRZE: <color=#65FF45>WŁĄCZONE</color>"
-                    : "BOMBY W GRZE: <color=#FF5545>WYŁĄCZONE</color>";
+                if (IsEnglish)
+                {
+                    bombsToggleText.text = bombsEnabled
+                        ? "BOMBS IN GAME: <color=#65FF45>ON</color>"
+                        : "BOMBS IN GAME: <color=#FF5545>OFF</color>";
+                }
+                else
+                {
+                    bombsToggleText.text = bombsEnabled
+                        ? "BOMBY W GRZE: <color=#65FF45>WŁĄCZONE</color>"
+                        : "BOMBY W GRZE: <color=#FF5545>WYŁĄCZONE</color>";
+                }
             }
         }
 
@@ -999,15 +1283,22 @@ namespace EventSlash
 #endif
             }
 
-            // Automatically upgrade SettingsDojoBoard if the scene doesn't have the tabbed layout + lives checkbox yet
+            // Automatically upgrade SettingsDojoBoard if the scene doesn't have the 3-tab layout (General + Tracking + Game) yet
             if (settingsPopupPanel != null)
             {
-                Transform existingTracking = settingsPopupPanel.transform.Find("SettingsDojoBoard/TrackingTabPanel");
+                Transform existingGeneral = settingsPopupPanel.transform.Find("SettingsDojoBoard/GeneralTabPanel");
                 Transform existingLivesCheckbox = settingsPopupPanel.transform.Find("SettingsDojoBoard/GameTabPanel/Btn_ToggleLives");
-                if (existingTracking == null || existingLivesCheckbox == null)
+                if (existingGeneral == null || existingLivesCheckbox == null)
                 {
                     RebuildTabbedSettingsPopupRuntime();
                 }
+            }
+
+            MenuFruitSelector[] selectors = FindObjectsByType<MenuFruitSelector>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            foreach (MenuFruitSelector sel in selectors)
+            {
+                if (sel.name == "Ring_LiveMode") liveModeSelector = sel;
+                else if (sel.name == "Ring_OfflineRawMode") rawModeSelector = sel;
             }
 
             Button[] allButtons = FindObjectsByType<Button>(FindObjectsInactive.Include, FindObjectsSortMode.None);
@@ -1020,6 +1311,7 @@ namespace EventSlash
                     case "Btn_ToggleSettings": btnToggleSettings = b; break;
                     case "Btn_CloseSettings": btnCloseSettings = b; break;
                     case "Btn_ResetDefaults": btnResetDefaults = b; break;
+                    case "Btn_TabGeneral": btnTabGeneral = b; break;
                     case "Btn_TabTracking": btnTabTracking = b; break;
                     case "Btn_TabGame": btnTabGame = b; break;
                     case "Btn_ToggleMaxHands": btnToggleMaxHands = b; break;
@@ -1045,11 +1337,22 @@ namespace EventSlash
                 }
             }
 
+            Dropdown[] allDropdowns = FindObjectsByType<Dropdown>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            foreach (Dropdown d in allDropdowns)
+            {
+                if (d.name == "LanguageDropdown")
+                {
+                    languageDropdown = d;
+                }
+            }
+
             Text[] allTexts = FindObjectsByType<Text>(FindObjectsInactive.Include, FindObjectsSortMode.None);
             foreach (Text t in allTexts)
             {
                 switch (t.name)
                 {
+                    case "SettingsTitle": settingsTitleText = t; break;
+                    case "LanguageLabelText": languageLabelText = t; break;
                     case "MinHandSpeedValueText": minHandSpeedValueText = t; break;
                     case "MinHandThicknessValueText": minHandThicknessValueText = t; break;
                     case "SensitivityValueText": sensitivityValueText = t; break;
@@ -1057,6 +1360,15 @@ namespace EventSlash
                     case "FruitSizeValueText": fruitSizeValueText = t; break;
                     case "MaxLivesValueText": maxLivesValueText = t; break;
                     case "BombChanceValueText": bombChanceValueText = t; break;
+                    case "PointsLabel": pointsLabelText = t; break;
+                    case "GameOverTitle": gameOverTitleText = t; break;
+                    case "GameOverScoreText": gameOverScoreText = t; break;
+                    case "GameOverBestText": gameOverBestText = t; break;
+                    case "BestScoreHudText": bestScoreHudText = t; break;
+                    case "ProfileBestText": menuProfileBestText = t; break;
+                    case "MenuStatusText": menuStatusText = t; break;
+                    case "ComboHeaderText": comboHeaderText = t; break;
+                    case "ComboPopupText": comboPopupText = t; break;
                 }
             }
 
@@ -1065,6 +1377,8 @@ namespace EventSlash
                 Transform board = settingsPopupPanel.transform.Find("SettingsDojoBoard");
                 if (board != null)
                 {
+                    Transform gen = board.Find("GeneralTabPanel");
+                    if (gen != null) generalTabPanel = gen.gameObject;
                     Transform trk = board.Find("TrackingTabPanel");
                     if (trk != null) trackingTabPanel = trk.gameObject;
                     Transform gm = board.Find("GameTabPanel");
@@ -1077,8 +1391,15 @@ namespace EventSlash
             WireButton(btnToggleSettings, ToggleSettingsPopup);
             WireButton(btnCloseSettings, CloseSettingsPopup);
             WireButton(btnResetDefaults, ResetSettingsToDefaults);
+            WireButton(btnTabGeneral, SelectGeneralTab);
             WireButton(btnTabTracking, SelectTrackingTab);
             WireButton(btnTabGame, SelectGameTab);
+
+            if (languageDropdown != null)
+            {
+                languageDropdown.onValueChanged.RemoveAllListeners();
+                languageDropdown.onValueChanged.AddListener(OnLanguageChanged);
+            }
 
             if (btnToggleMaxHands != null)
             {
@@ -1135,7 +1456,7 @@ namespace EventSlash
 
         /// <summary>
         /// Dynamically upgrades the SettingsDojoBoard at runtime if the scene hasn't been rebuilt yet,
-        /// so the TRACKING and GAME tabs + lives checkbox + DOMYŚLNE button work immediately on Play.
+        /// so the GENERAL/OGÓLNE, TRACKING/ŚLEDZENIE, and GAME/ROZGRYWKA tabs + Language Dropdown + DOMYŚLNE button work immediately on Play.
         /// </summary>
         private void RebuildTabbedSettingsPopupRuntime()
         {
@@ -1160,15 +1481,28 @@ namespace EventSlash
                 DestroyImmediate(board.GetChild(i).gameObject);
             }
 
-            CreateRuntimeText(board, "SettingsTitle", "USTAWIENIA", font, 54,
+            settingsTitleText = CreateRuntimeText(board, "SettingsTitle", "USTAWIENIA", font, 54,
                 new Color(1.0f, 0.88f, 0.32f), new Vector2(0f, 282f), new Vector2(640f, 70f));
 
-            btnTabTracking = CreateRuntimeButton(board, "Btn_TabTracking", bannerSprite, "TRACKING (ŚLEDZENIE)", font, 24,
-                new Color(1.0f, 0.94f, 0.58f), new Vector2(-190f, 205f), new Vector2(350f, 60f));
-            btnTabGame = CreateRuntimeButton(board, "Btn_TabGame", bannerSprite, "GAME (ROZGRYWKA)", font, 24,
-                new Color(1.0f, 0.94f, 0.58f), new Vector2(190f, 205f), new Vector2(350f, 60f));
+            btnTabGeneral = CreateRuntimeButton(board, "Btn_TabGeneral", bannerSprite, "OGÓLNE", font, 25,
+                new Color(1.0f, 0.94f, 0.58f), new Vector2(-265f, 205f), new Vector2(245f, 58f));
+            btnTabTracking = CreateRuntimeButton(board, "Btn_TabTracking", bannerSprite, "ŚLEDZENIE", font, 25,
+                new Color(1.0f, 0.94f, 0.58f), new Vector2(0f, 205f), new Vector2(245f, 58f));
+            btnTabGame = CreateRuntimeButton(board, "Btn_TabGame", bannerSprite, "ROZGRYWKA", font, 25,
+                new Color(1.0f, 0.94f, 0.58f), new Vector2(265f, 205f), new Vector2(245f, 58f));
 
-            // --- TRACKING TAB PANEL ---
+            // --- TAB 1: GENERAL ---
+            generalTabPanel = CreateRuntimeContainer(board, "GeneralTabPanel");
+
+            languageLabelText = CreateRuntimeText(generalTabPanel.transform, "LanguageLabelText",
+                "JĘZYK:", font, 30,
+                new Color(1.0f, 0.96f, 0.84f), new Vector2(0f, 75f), new Vector2(560f, 44f));
+
+            languageDropdown = CreateRuntimeDropdown(generalTabPanel.transform, "LanguageDropdown",
+                bannerSprite, font, new Vector2(0f, 5f), new Vector2(380f, 60f),
+                new List<string> { "English", "Polski" }, languageIndex);
+
+            // --- TAB 2: TRACKING ---
             trackingTabPanel = CreateRuntimeContainer(board, "TrackingTabPanel");
 
             minHandSpeedValueText = CreateRuntimeText(trackingTabPanel.transform, "MinHandSpeedValueText",
@@ -1204,7 +1538,7 @@ namespace EventSlash
                 new Color(1.0f, 0.95f, 0.82f), new Vector2(0f, -196f), new Vector2(460f, 56f));
             denoiseToggleText = btnToggleDenoise.GetComponentInChildren<Text>(true);
 
-            // --- GAME TAB PANEL ---
+            // --- TAB 3: GAME ---
             gameTabPanel = CreateRuntimeContainer(board, "GameTabPanel");
 
             spawnRateValueText = CreateRuntimeText(gameTabPanel.transform, "SpawnRateValueText",
@@ -1315,6 +1649,124 @@ namespace EventSlash
 
             CreateRuntimeText(btnObj.transform, "Label", label, font, fontSize, textColor, Vector2.zero, size);
             return btn;
+        }
+
+        private static Dropdown CreateRuntimeDropdown(
+            Transform parent,
+            string name,
+            Sprite bgSprite,
+            Font font,
+            Vector2 pos,
+            Vector2 size,
+            List<string> options,
+            int defaultIndex)
+        {
+            GameObject ddObj = new GameObject(name);
+            ddObj.transform.SetParent(parent, false);
+            RectTransform rt = ddObj.AddComponent<RectTransform>();
+            rt.anchorMin = new Vector2(0.5f, 0.5f);
+            rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.anchoredPosition = pos;
+            rt.sizeDelta = size;
+
+            Image bgImg = ddObj.AddComponent<Image>();
+            bgImg.sprite = bgSprite;
+            bgImg.color = bgSprite != null ? Color.white : new Color(0.32f, 0.17f, 0.07f, 0.98f);
+            bgImg.raycastTarget = true;
+
+            Dropdown dd = ddObj.AddComponent<Dropdown>();
+            dd.targetGraphic = bgImg;
+
+            Text captionLabel = CreateRuntimeText(ddObj.transform, "Label",
+                options[Mathf.Clamp(defaultIndex, 0, options.Count - 1)], font, 26,
+                new Color(1.0f, 0.94f, 0.58f), new Vector2(-15f, 0f), new Vector2(size.x - 60f, size.y));
+
+            CreateRuntimeText(ddObj.transform, "Arrow", "▼", font, 22,
+                new Color(1.0f, 0.88f, 0.32f), new Vector2(size.x * 0.5f - 34f, 0f), new Vector2(40f, size.y));
+
+            // Dropdown Template (inactive until clicked)
+            GameObject template = new GameObject("Template");
+            template.transform.SetParent(ddObj.transform, false);
+            RectTransform tmplRt = template.AddComponent<RectTransform>();
+            tmplRt.anchorMin = new Vector2(0f, 0f);
+            tmplRt.anchorMax = new Vector2(1f, 0f);
+            tmplRt.pivot = new Vector2(0.5f, 1f);
+            tmplRt.anchoredPosition = new Vector2(0f, -4f);
+            tmplRt.sizeDelta = new Vector2(0f, 124f);
+
+            Image tmplImg = template.AddComponent<Image>();
+            tmplImg.color = new Color(0.18f, 0.09f, 0.03f, 0.98f);
+
+            ScrollRect sr = template.AddComponent<ScrollRect>();
+            sr.horizontal = false;
+            sr.vertical = true;
+            sr.movementType = ScrollRect.MovementType.Clamped;
+
+            GameObject viewport = new GameObject("Viewport");
+            viewport.transform.SetParent(template.transform, false);
+            RectTransform vpRt = viewport.AddComponent<RectTransform>();
+            vpRt.anchorMin = Vector2.zero;
+            vpRt.anchorMax = Vector2.one;
+            vpRt.sizeDelta = Vector2.zero;
+            vpRt.pivot = new Vector2(0f, 1f);
+
+            Mask mask = viewport.AddComponent<Mask>();
+            mask.showMaskGraphic = false;
+            Image vpImg = viewport.AddComponent<Image>();
+            vpImg.color = Color.white;
+
+            GameObject content = new GameObject("Content");
+            content.transform.SetParent(viewport.transform, false);
+            RectTransform contentRt = content.AddComponent<RectTransform>();
+            contentRt.anchorMin = new Vector2(0f, 1f);
+            contentRt.anchorMax = new Vector2(1f, 1f);
+            contentRt.pivot = new Vector2(0.5f, 1f);
+            contentRt.anchoredPosition = Vector2.zero;
+            contentRt.sizeDelta = new Vector2(0f, 60f);
+
+            GameObject item = new GameObject("Item");
+            item.transform.SetParent(content.transform, false);
+            RectTransform itemRt = item.AddComponent<RectTransform>();
+            itemRt.anchorMin = new Vector2(0f, 0.5f);
+            itemRt.anchorMax = new Vector2(1f, 0.5f);
+            itemRt.pivot = new Vector2(0.5f, 0.5f);
+            itemRt.anchoredPosition = Vector2.zero;
+            itemRt.sizeDelta = new Vector2(0f, 58f);
+
+            GameObject itemBg = new GameObject("Item Background");
+            itemBg.transform.SetParent(item.transform, false);
+            RectTransform itemBgRt = itemBg.AddComponent<RectTransform>();
+            itemBgRt.anchorMin = Vector2.zero;
+            itemBgRt.anchorMax = Vector2.one;
+            itemBgRt.sizeDelta = Vector2.zero;
+            Image itemBgImg = itemBg.AddComponent<Image>();
+            itemBgImg.color = new Color(0.28f, 0.15f, 0.06f, 0.98f);
+
+            Text itemCheck = CreateRuntimeText(item.transform, "Item Checkmark", "✔", font, 22,
+                new Color(0.40f, 0.96f, 0.32f), new Vector2(-size.x * 0.5f + 32f, 0f), new Vector2(40f, 54f));
+
+            Text itemLabel = CreateRuntimeText(item.transform, "Item Label", "Option", font, 24,
+                new Color(1.0f, 0.96f, 0.84f), Vector2.zero, new Vector2(size.x - 80f, 54f));
+
+            Toggle itemToggle = item.AddComponent<Toggle>();
+            itemToggle.targetGraphic = itemBgImg;
+            itemToggle.graphic = itemCheck;
+            itemToggle.isOn = true;
+
+            sr.content = contentRt;
+            sr.viewport = vpRt;
+
+            dd.template = tmplRt;
+            dd.captionText = captionLabel;
+            dd.itemText = itemLabel;
+            dd.ClearOptions();
+            dd.AddOptions(options);
+            dd.SetValueWithoutNotify(Mathf.Clamp(defaultIndex, 0, options.Count - 1));
+            dd.RefreshShownValue();
+
+            template.SetActive(false);
+            return dd;
         }
 
         private static Slider CreateRuntimeSlider(Transform parent, string name, Vector2 pos, Vector2 size, float minVal, float maxVal, float defaultVal, bool wholeNumbers)

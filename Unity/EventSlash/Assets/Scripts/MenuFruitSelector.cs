@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using UnityEngine;
+using UnityEngine.UI;
 using UnityEngine.EventSystems;
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
@@ -35,6 +36,8 @@ namespace EventSlash
         private float _readyTime;
         private Action _onSelectedCallback;
         private Camera _mainCam;
+        private string _currentTopArcText;
+        private string _currentBottomArcText;
 
         public void Initialize(Action onSelected)
         {
@@ -42,6 +45,117 @@ namespace EventSlash
             _mainCam = Camera.main;
             _readyTime = Time.unscaledTime + 0.55f;
             RespawnWholeFruit();
+        }
+
+        public void SetArcTexts(string topArcText, string bottomArcText)
+        {
+            if (rotatingRingGraphic == null)
+            {
+                Transform ringVis = transform.Find("RotatingRingVisual");
+                if (ringVis != null)
+                {
+                    rotatingRingGraphic = ringVis.GetComponent<RectTransform>();
+                }
+            }
+            if (rotatingRingGraphic == null) return;
+
+            if (_currentTopArcText == topArcText && _currentBottomArcText == bottomArcText && rotatingRingGraphic.childCount > 0)
+            {
+                return;
+            }
+
+            _currentTopArcText = topArcText;
+            _currentBottomArcText = bottomArcText;
+            stationName = topArcText;
+
+            Font font = null;
+            Text existingText = rotatingRingGraphic.GetComponentInChildren<Text>(true);
+            if (existingText != null && existingText.font != null)
+            {
+                font = existingText.font;
+            }
+            else if (EventSlashGameManager.Instance != null &&
+                     EventSlashGameManager.Instance.menuProfileBestText != null &&
+                     EventSlashGameManager.Instance.menuProfileBestText.font != null)
+            {
+                font = EventSlashGameManager.Instance.menuProfileBestText.font;
+            }
+            if (font == null)
+            {
+                font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            }
+
+            for (int i = rotatingRingGraphic.childCount - 1; i >= 0; i--)
+            {
+                Transform child = rotatingRingGraphic.GetChild(i);
+                if (child.name.StartsWith("TopArc_") || child.name.StartsWith("BottomArc_"))
+                {
+                    child.gameObject.SetActive(false);
+                    Destroy(child.gameObject);
+                }
+            }
+
+            float arcRadius = (ringRectTransform != null && ringRectTransform.sizeDelta.x > 0f)
+                ? ringRectTransform.sizeDelta.x * 0.342f
+                : 147.06f;
+
+            SpawnCurvedArcText(rotatingRingGraphic, "TopArc", topArcText, font, 24, arcRadius, 135f, -7.2f);
+            SpawnCurvedArcText(rotatingRingGraphic, "BottomArc", bottomArcText, font, 24, arcRadius, -45f, -7.2f);
+        }
+
+        private static void SpawnCurvedArcText(
+            Transform ringParent,
+            string prefix,
+            string text,
+            Font font,
+            int fontSize,
+            float radius,
+            float centerAngleDeg,
+            float stepAngleDeg)
+        {
+            if (string.IsNullOrEmpty(text)) return;
+            int n = text.Length;
+            float startAngle = centerAngleDeg - (n - 1) * 0.5f * stepAngleDeg;
+
+            for (int i = 0; i < n; i++)
+            {
+                char c = text[i];
+                if (c == ' ') continue;
+
+                float angDeg = startAngle + i * stepAngleDeg;
+                float angRad = angDeg * Mathf.Deg2Rad;
+                Vector2 pos = new Vector2(Mathf.Cos(angRad) * radius, Mathf.Sin(angRad) * radius);
+
+                GameObject txtObj = new GameObject($"{prefix}_{i}_{c}");
+                txtObj.transform.SetParent(ringParent, false);
+                RectTransform rt = txtObj.AddComponent<RectTransform>();
+                rt.anchorMin = new Vector2(0.5f, 0.5f);
+                rt.anchorMax = new Vector2(0.5f, 0.5f);
+                rt.pivot = new Vector2(0.5f, 0.5f);
+                rt.anchoredPosition = pos;
+                rt.sizeDelta = new Vector2(38f, 38f);
+                rt.localRotation = Quaternion.Euler(0f, 0f, angDeg - 90f);
+
+                Text chTxt = txtObj.AddComponent<Text>();
+                chTxt.font = font;
+                chTxt.text = c.ToString();
+                chTxt.fontSize = fontSize;
+                chTxt.fontStyle = FontStyle.Normal;
+                chTxt.color = Color.white;
+                chTxt.supportRichText = true;
+                chTxt.alignment = TextAnchor.MiddleCenter;
+                chTxt.horizontalOverflow = HorizontalWrapMode.Wrap;
+                chTxt.verticalOverflow = VerticalWrapMode.Overflow;
+                chTxt.raycastTarget = false;
+
+                Outline ol = txtObj.AddComponent<Outline>();
+                ol.effectColor = new Color(0.06f, 0.08f, 0.14f, 0.96f);
+                ol.effectDistance = new Vector2(2.0f, -2.0f);
+
+                Shadow sh = txtObj.AddComponent<Shadow>();
+                sh.effectColor = new Color(0f, 0f, 0f, 0.90f);
+                sh.effectDistance = new Vector2(2.9f, -2.9f);
+            }
         }
 
         public void RespawnWholeFruit()
