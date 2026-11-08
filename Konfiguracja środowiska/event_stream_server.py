@@ -13,7 +13,7 @@ import metavision_sdk_cv as mv_cv
 MAGIC = b"EVSL"
 GRID_W = 32
 GRID_H = 24
-MAX_CLUSTERS = 4
+MAX_CLUSTERS = 2
 
 _WOOD_BG_CACHE = {}
 
@@ -56,16 +56,25 @@ def get_light_wood_bg(height, width):
 
 class MetavisionHandTracker:
     """
-    Uses native Prophesee Metavision SDK CV algorithms (metavision_sdk_cv):
+    Hand-only tracker built on Prophesee Metavision SDK CV algorithms (metavision_sdk_cv):
       1. ActivityNoiseFilterAlgorithm: Spatiotemporal C++ noise filter removing isolated sensor events.
-      2. SparseOpticalFlowAlgorithm (FastObjects preset): Computes per-event optical flow vectors
-         (vx, vy) and cluster IDs (id, center_x, center_y) to track fast hand/blade slashes.
+      2. SparseOpticalFlowAlgorithm (FastObjects preset): Per-event optical flow vectors (vx, vy).
+      3. Hand-Only Morphological & Silhouette Discriminator:
+         - Detects and suppresses full-body sway (upright torso anchored at the bottom of the frame
+           moving side-to-side without independent hand slashes).
+         - Computes 2D interior event thickness (thick_px: >= 5 neighbors in 3x3) to separate dense 2D
+           hands/palms/fists from thin 1D contours (forearms, sleeves, head, shoulders).
+         - Groups active 8x8 cells into connected limb components and selects at most 1 hand hotspot
+           per arm (highest thick5 * sqrt(fast5 + 1)), completely eliminating elbow and forearm markers.
+         - Enforces strict hand verification (no hand detected -> zero clusters & zero motion_grid).
     """
 
     def __init__(self, width, height, denoise=True):
         self.width = width
         self.height = height
         self.denoise = denoise
+        self.gh = height // 8
+        self.gw = width // 8
 
         # Native Metavision spatiotemporal noise filter (8ms window)
         self.activity_filter = mv_cv.ActivityNoiseFilterAlgorithm(width, height, 8000)
@@ -77,125 +86,269 @@ class MetavisionHandTracker:
         )
         self.flow_buf = self.flow_algo.get_empty_output_buffer()
 
+        # Full-body sway suppression state
+        self.body_sway_cooldown = 0
+        self.torso_x_center = width * 0.5
+        self.torso_half_w = 130.0
+        self.cell_ema = np.zeros((self.gh, self.gw), dtype=np.float32)
+
     def process_slice(self, events):
         frame = get_light_wood_bg(self.height, self.width).copy()
-        cell_h = self.height // GRID_H
-        cell_w = self.width // GRID_W
+        motion_grid = np.zeros((GRID_H, GRID_W), dtype=np.uint8)
 
         if events.size == 0:
+            self.cell_ema *= 0.88
+            if self.body_sway_cooldown > 0:
+                self.body_sway_cooldown -= 1
             frame_BottomUp = np.ascontiguousarray(np.flipud(frame))
-            motion_grid = np.zeros((GRID_H, GRID_W), dtype=np.uint8)
             return frame_BottomUp, motion_grid, []
 
         # 1. Run Metavision ActivityNoiseFilterAlgorithm on raw event buffer
         self.activity_filter.process_events(events, self.filtered_buf)
-        clean_evs = self.filtered_buf.numpy() if self.denoise else events
+        clean_evs = self.filtered_buf.numpy()
+        render_evs = clean_evs if self.denoise else events
+
+        h, w, gh, gw = self.height, self.width, self.gh, self.gw
+        act = np.zeros((h, w), dtype=np.uint8)
+        if clean_evs.size > 0:
+            act[clean_evs["y"], clean_evs["x"]] = 1
+
+        n3 = cv2.boxFilter(act, ddepth=cv2.CV_16U, ksize=(3, 3), normalize=False)
 
         # 2. Render visual frame on the light wooden background
-        if clean_evs.size > 0:
-            x = clean_evs["x"]
-            y = clean_evs["y"]
-            p = clean_evs["p"].astype(bool)
-
+        if render_evs.size > 0:
             if self.denoise:
-                # Additional spatial check so any isolated 1-2px specks after temporal filter stay wood-colored
-                act = np.zeros((self.height, self.width), dtype=np.uint8)
-                pol = np.zeros((self.height, self.width), dtype=np.uint8)
-                act[y, x] = 1
+                x = clean_evs["x"]
+                y = clean_evs["y"]
+                p = clean_evs["p"].astype(bool)
+                pol = np.zeros((h, w), dtype=np.uint8)
                 pol[y[~p], x[~p]] = 1
                 pol[y[p], x[p]] = 2
 
-                n3 = cv2.boxFilter(act, ddepth=cv2.CV_16U, ksize=(3, 3), normalize=False)
                 n5 = cv2.boxFilter(act, ddepth=cv2.CV_16U, ksize=(5, 5), normalize=False)
                 vis_mask = (act > 0) & (n3 >= 2) & (n5 >= 5)
 
                 frame[vis_mask & (pol == 2)] = (255, 252, 240)
                 frame[vis_mask & (pol == 1)] = (26, 14, 5)
             else:
-                frame[y[p], x[p]] = (255, 252, 240)
-                frame[y[~p], x[~p]] = (26, 14, 5)
+                rx = render_evs["x"]
+                ry = render_evs["y"]
+                rp = render_evs["p"].astype(bool)
+                frame[ry[rp], rx[rp]] = (255, 252, 240)
+                frame[ry[~rp], rx[~rp]] = (26, 14, 5)
 
         frame_BottomUp = np.ascontiguousarray(np.flipud(frame))
 
-        # 3. Run Metavision SparseOpticalFlowAlgorithm on denoised events to track moving hands
+        # 3. Run Metavision SparseOpticalFlowAlgorithm on denoised events
         self.flow_algo.process_events(self.filtered_buf, self.flow_buf)
-        fln = self.flow_buf.numpy()
+        fl = self.flow_buf.numpy()
 
-        flow_map = np.zeros((self.height, self.width), dtype=np.float32)
-        clusters = []
+        # 4. Compute 8x8 cell fill and 2D interior thickness (thick_px: >= 5 neighbors in 3x3)
+        thick_px = ((act > 0) & (n3 >= 5)).astype(np.uint8)
+        cell_fill = act[: gh * 8, : gw * 8].reshape(gh, 8, gw, 8).sum(axis=(1, 3)).astype(np.float32)
+        cell_thick = thick_px[: gh * 8, : gw * 8].reshape(gh, 8, gw, 8).sum(axis=(1, 3)).astype(np.float32)
 
-        if fln.size > 0:
-            speed = np.hypot(fln["vx"], fln["vy"])
-            valid = (
-                (fln["x"] >= 0)
-                & (fln["x"] < self.width)
-                & (fln["y"] >= 0)
-                & (fln["y"] < self.height)
-                & (speed >= 55.0)
+        sil_mask = cell_fill >= 4.0
+        dense_mask = cell_fill >= 15.0
+        tot_sil = int(sil_mask.sum())
+        tot_dense = int(dense_mask.sum())
+
+        # 5. Detect Upright Body Silhouette & Full-Body Sway
+        r_hip0, r_hip1 = int(gh * 0.76), gh
+        r_chst0, r_chst1 = int(gh * 0.33), int(gh * 0.76)
+        r_up0, r_up1 = 0, int(gh * 0.50)
+
+        col_hip = sil_mask[r_hip0:r_hip1, :].sum(axis=0) >= 4
+        col_chest = sil_mask[r_chst0:r_chst1, :].sum(axis=0) >= 6
+        col_upper = sil_mask[r_up0:r_up1, :].sum(axis=0) >= 4
+
+        k5 = np.ones((1, 5), dtype=np.uint8)
+        hip_d = cv2.dilate(col_hip.astype(np.uint8)[None, :], k5)[0] > 0
+        chest_d = cv2.dilate(col_chest.astype(np.uint8)[None, :], k5)[0] > 0
+        upper_d = cv2.dilate(col_upper.astype(np.uint8)[None, :], np.ones((1, 9), dtype=np.uint8))[0] > 0
+
+        torso_cols = np.where(hip_d & chest_d)[0]
+        upright_cols = np.where(hip_d & chest_d & upper_d)[0]
+        upper_sil = int(sil_mask[r_up0:r_up1, :].sum())
+        bottom_base_sil = int(sil_mask[r_hip0:r_hip1, :].sum())
+
+        torso_col_mask = np.zeros((gh, gw), dtype=bool)
+        has_upright_torso = False
+        if torso_cols.size >= 14 and upright_cols.size >= 8 and upper_sil >= 75 and bottom_base_sil >= 85:
+            tx0, tx1 = int(torso_cols[0]), int(torso_cols[-1])
+            tw_cols = tx1 - tx0 + 1
+            if tw_cols >= 15:
+                has_upright_torso = True
+                cx_px = 0.5 * (tx0 + tx1 + 1) * 8.0
+                self.torso_x_center = 0.6 * self.torso_x_center + 0.4 * cx_px
+                self.torso_half_w = float(np.clip(tw_cols * 4.0 + 16.0, 110.0, 165.0))
+                torso_col_mask[int(gh * 0.26) : gh, max(0, tx0 - 3) : min(gw, tx1 + 4)] = True
+                hx0 = max(0, int((self.torso_x_center - 90.0) // 8))
+                hx1 = min(gw, int((self.torso_x_center + 90.0) // 8) + 1)
+                torso_col_mask[0 : int(gh * 0.37), hx0:hx1] = True
+
+        torso_sil = int(sil_mask[torso_col_mask].sum()) if has_upright_torso else 0
+        outside_sil = tot_sil - torso_sil
+
+        is_heavy_body_sway = has_upright_torso and bottom_base_sil >= 105 and (
+            (tot_sil >= 650) or (tot_dense >= 335)
+        )
+
+        if is_heavy_body_sway:
+            self.body_sway_cooldown = 18  # ~300 ms cooldown across sway turnarounds
+        elif self.body_sway_cooldown > 0:
+            if (
+                torso_cols.size >= 11
+                and tot_sil >= 240
+                and bottom_base_sil >= 65
+                and outside_sil < max(130, torso_sil * 0.45)
+            ):
+                self.body_sway_cooldown = max(self.body_sway_cooldown - 1, 10)
+            elif tot_sil >= 380 and bottom_base_sil >= 95:
+                self.body_sway_cooldown = max(self.body_sway_cooldown - 1, 8)
+            else:
+                self.body_sway_cooldown -= 1
+
+        self.cell_ema = 0.85 * self.cell_ema + 0.15 * cell_fill
+
+        # During full-body sway, suppress all cluster and grid registration
+        if self.body_sway_cooldown > 0:
+            return frame_BottomUp, motion_grid, []
+
+        # 6. Bin fast optical flow events into the 8x8 cell grid
+        cell_fast = np.zeros((gh, gw), dtype=np.float32)
+        cell_vx = np.zeros((gh, gw), dtype=np.float32)
+        cell_vy = np.zeros((gh, gw), dtype=np.float32)
+        if fl.size > 0:
+            sp = np.hypot(fl["vx"], fl["vy"])
+            ok = (
+                (sp >= 135.0)
+                & (fl["x"] >= 0)
+                & (fl["x"] < gw * 8)
+                & (fl["y"] >= 0)
+                & (fl["y"] < gh * 8)
             )
-            vfl = fln[valid]
-            vspeed = speed[valid]
+            fx = fl["x"][ok] // 8
+            fy = fl["y"][ok] // 8
+            np.add.at(cell_fast, (fy, fx), 1.0)
+            np.add.at(cell_vx, (fy, fx), fl["vx"][ok])
+            np.add.at(cell_vy, (fy, fx), fl["vy"][ok])
 
-            if vfl.size > 0:
-                # Populate optical-flow weighted activity map for the 32x24 grid
-                speed_weight = np.clip(vspeed / 160.0, 0.5, 3.0)
-                flow_map[vfl["y"], vfl["x"]] = speed_weight
+        # 7. Compute 5x5 cell (40x40 px) neighborhood aggregates for hand hotspot detection
+        dense5 = cv2.boxFilter(dense_mask.astype(np.float32), ddepth=-1, ksize=(5, 5), normalize=False)
+        thick5 = cv2.boxFilter(cell_thick, ddepth=-1, ksize=(5, 5), normalize=False)
+        fast5 = cv2.boxFilter(cell_fast, ddepth=-1, ksize=(5, 5), normalize=False)
+        vx5 = cv2.boxFilter(cell_vx, ddepth=-1, ksize=(5, 5), normalize=False)
+        vy5 = cv2.boxFilter(cell_vy, ddepth=-1, ksize=(5, 5), normalize=False)
 
-                # Extract top clusters from Metavision SparseOpticalFlow cluster IDs
-                uids, counts = np.unique(vfl["id"], return_counts=True)
-                good_mask = counts >= 12
-                good_ids = uids[good_mask]
-                good_counts = counts[good_mask]
+        valid_cell = cell_fill >= 6.0
+        if has_upright_torso:
+            # Exclude hollow/slow torso and head silhouette cells so connected arm components focus on hands
+            weak_torso = torso_col_mask & ((thick5 < 560.0) | (fast5 < 190.0) | (dense5 < 17.0))
+            valid_cell[weak_torso] = False
 
-                candidates = []
-                for cid, cnt in zip(good_ids, good_counts):
-                    sub = vfl[vfl["id"] == cid]
-                    xs = sub["x"]
-                    ys = sub["y"]
-                    vxs = sub["vx"]
-                    vys = sub["vy"]
+        limb_mask = valid_cell.astype(np.uint8)
+        limb_mask = cv2.morphologyEx(limb_mask, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
 
-                    # If a single optical-flow cluster spans wide across both arms, extract left & right hand tips
-                    if cnt >= 180 and (xs.max() - xs.min()) >= 110:
-                        x_min, x_max = int(xs.min()), int(xs.max())
-                        left_sel = xs <= (x_min + 45)
-                        right_sel = xs >= (x_max - 45)
-                        for sel in (left_sel, right_sel):
-                            scnt = int(np.count_nonzero(sel))
-                            if scnt >= 12:
-                                cx = float(xs[sel].mean())
-                                cy = float(ys[sel].mean())
-                                mvx = float(vxs[sel].mean())
-                                mvy = float(vys[sel].mean())
-                                mspd = float(np.hypot(mvx, mvy))
-                                u = float(np.clip(cx / self.width, 0.0, 1.0))
-                                v = float(np.clip(1.0 - (cy / self.height), 0.0, 1.0))
-                                vu = float(mvx / self.width)
-                                vv = float(-mvy / self.height)
-                                intensity = float(min(1.0, (scnt / 80.0) * (mspd / 180.0)))
-                                candidates.append((scnt * mspd * 1.4, u, v, vu, vv, intensity))
-                    else:
-                        cx = float(xs.mean())
-                        cy = float(ys.mean())
-                        mvx = float(vxs.mean())
-                        mvy = float(vys.mean())
-                        mspd = float(np.hypot(mvx, mvy))
-                        u = float(np.clip(cx / self.width, 0.0, 1.0))
-                        v = float(np.clip(1.0 - (cy / self.height), 0.0, 1.0))
-                        vu = float(mvx / self.width)
-                        vv = float(-mvy / self.height)
-                        intensity = float(min(1.0, (cnt / 120.0) * (mspd / 180.0)))
-                        candidates.append((cnt * mspd, u, v, vu, vv, intensity))
+        n_comp, labels, stats, _ = cv2.connectedComponentsWithStats(limb_mask, connectivity=8)
 
-                candidates.sort(key=lambda item: item[0], reverse=True)
-                for _, u, v, vu, vv, intensity in candidates[:MAX_CLUSTERS]:
-                    clusters.append((u, v, vu, vv, intensity))
+        candidates = []
+        for c in range(1, n_comp):
+            area = int(stats[c, cv2.CC_STAT_AREA])
+            if area < 10:
+                continue
+            x0, y0, cw, ch, _ = stats[c]
+            cmask = labels == c
 
-        # Flip flow_map vertically to match Unity bottom-up viewport coordinates (v=0 at bottom)
-        flow_BottomUp = np.flipud(flow_map)
-        trimmed = flow_BottomUp[: GRID_H * cell_h, : GRID_W * cell_w]
-        cell_flow = trimmed.reshape(GRID_H, cell_h, GRID_W, cell_w).sum(axis=(1, 3))
-        motion_grid = np.clip(cell_flow * 2.2, 0.0, 255.0).astype(np.uint8)
+            # If a single component spans very wide across both arms (>= 300 px), split into Left and Right arms
+            sub_masks = []
+            if cw * 8 >= 300:
+                mid_x = x0 + cw // 2
+                left_m = cmask.copy()
+                left_m[:, max(x0, mid_x - 4) :] = False
+                right_m = cmask.copy()
+                right_m[:, : min(x0 + cw, mid_x + 4)] = False
+                sub_masks.extend([left_m, right_m])
+            else:
+                sub_masks.append(cmask)
+
+            for sm in sub_masks:
+                if int(sm.sum()) < 8:
+                    continue
+
+                # Select the single strongest hand hotspot in this arm component
+                score_map = np.where(sm, thick5 * np.sqrt(fast5 + 1.0), 0.0)
+                by, bx = np.unravel_index(np.argmax(score_map), score_map.shape)
+                d_val = float(dense5[by, bx])
+                th_val = float(thick5[by, bx])
+                f_val = float(fast5[by, bx])
+
+                # Strict hand verification: dense 2D core + fast optical flow
+                if d_val < 12.0 or th_val < 260.0 or f_val < 65.0:
+                    continue
+
+                mvx = float(vx5[by, bx]) / max(f_val, 1.0)
+                mvy = float(vy5[by, bx]) / max(f_val, 1.0)
+                mspd = float(np.hypot(mvx, mvy))
+                if mspd < 155.0:
+                    continue
+
+                px = (bx + 0.5) * 8.0
+                py = (by + 0.5) * 8.0
+
+                # Suppress chest/torso interior unless extreme hand activity is right in front of the chest
+                if has_upright_torso and torso_col_mask[by, bx]:
+                    if th_val < 650.0 or f_val < 240.0 or d_val < 19.0:
+                        continue
+
+                # Suppress lower-hip/waist edge when lowering arms at bottom of screen
+                if py >= h * 0.885 and (th_val < 600.0 or f_val < 220.0):
+                    continue
+
+                # Suppress head region (top-center above chest/neck silhouette)
+                if py <= h * 0.325 and abs(px - self.torso_x_center) <= 95.0:
+                    below_sil = int(
+                        sil_mask[
+                            min(gh - 1, by + 4) : min(gh, by + 22),
+                            max(0, bx - 6) : min(gw, bx + 7),
+                        ].sum()
+                    )
+                    if below_sil >= 18 and (th_val < 900.0 or f_val < 500.0):
+                        continue
+
+                u = float(np.clip(px / w, 0.0, 1.0))
+                v = float(np.clip(1.0 - (py / h), 0.0, 1.0))
+                vu = float(mvx / w)
+                vv = float(-mvy / h)
+                intensity = float(min(1.0, (th_val / 600.0) * (mspd / 200.0)))
+                score = th_val * np.sqrt(f_val) * (mspd / 200.0)
+                candidates.append((score, px, py, u, v, vu, vv, intensity))
+
+        # 8. Non-maximum suppression: at most 2 hands, minimum 130 px apart
+        candidates.sort(key=lambda item: item[0], reverse=True)
+        selected = []
+        for cand in candidates:
+            _, px, py, u, v, vu, vv, intensity = cand
+            if any(np.hypot(px - sx, py - sy) < 130.0 for sx, sy, *_ in selected):
+                continue
+            selected.append((px, py, u, v, vu, vv, intensity))
+            if len(selected) >= MAX_CLUSTERS:
+                break
+
+        # Sort selected hands left-to-right (by u) so 2-hand trail assignment stays consistent
+        selected.sort(key=lambda item: item[2])
+        clusters = [(u, v, vu, vv, intensity) for _, _, u, v, vu, vv, intensity in selected]
+
+        # 9. Populate motion_grid ONLY around verified tracked hands ("no hand detected -> no registration")
+        for u, v, _, _, intensity in clusters:
+            gx = int(np.clip(u * GRID_W, 0, GRID_W - 1))
+            gy = int(np.clip(v * GRID_H, 0, GRID_H - 1))
+            val = int(np.clip(intensity * 255.0, 110.0, 255.0))
+            y0 = max(0, gy - 1)
+            y1 = min(GRID_H, gy + 2)
+            x0 = max(0, gx - 1)
+            x1 = min(GRID_W, gx + 2)
+            motion_grid[y0:y1, x0:x1] = np.maximum(motion_grid[y0:y1, x0:x1], val)
 
         return frame_BottomUp, motion_grid, clusters
 
@@ -224,7 +377,7 @@ def stream_to_client(conn, mode, raw_file, delta_t, denoise):
         tracker = MetavisionHandTracker(width, height, denoise=denoise)
         print(
             f"[EventSlash Server] Streaming {mode} ({width}x{height}) using Metavision SDK CV "
-            f"(ActivityNoiseFilter + SparseOpticalFlow), denoise={denoise}",
+            f"(Hand-Only Tracker), denoise={denoise}",
             flush=True,
         )
 

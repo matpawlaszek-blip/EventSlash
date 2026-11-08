@@ -5,13 +5,14 @@ namespace EventSlash
 {
     /// <summary>
     /// Renders visual blade/hand markers and trails over the event camera view
-    /// corresponding to the detected active hand motion clusters.
+    /// corresponding to the detected active hand motion clusters (up to 2 hands + mouse fallback).
+    /// Matches each detected hand to its nearest active trail so single/dual hand transitions stay smooth.
     /// </summary>
     public class SlashTrailVisualizer : MonoBehaviour
     {
         public Camera targetCamera;
         public float planeZ = -1.2f;
-        public int maxTrails = 4;
+        public int maxTrails = 3;
         public Color trailColor = new Color(0.15f, 0.95f, 1.0f, 0.9f);
 
         private readonly List<TrailRenderer> _trails = new List<TrailRenderer>();
@@ -24,7 +25,8 @@ namespace EventSlash
             Shader trailShader = Shader.Find("Sprites/Default");
             if (trailShader == null) trailShader = Shader.Find("Universal Render Pipeline/Unlit");
 
-            for (int i = 0; i < maxTrails; i++)
+            int trailCount = Mathf.Max(2, maxTrails);
+            for (int i = 0; i < trailCount; i++)
             {
                 GameObject tObj = new GameObject($"HandBladeTrail_{i}");
                 tObj.transform.SetParent(transform, false);
@@ -72,31 +74,83 @@ namespace EventSlash
             EventCameraManager.Instance.GetActiveClusters(_clusters);
             float distFromCam = Mathf.Abs(planeZ - targetCamera.transform.position.z);
 
-            for (int i = 0; i < _trails.Count; i++)
+            int clusterCount = Mathf.Min(_clusters.Count, _trails.Count);
+            if (clusterCount == 0)
             {
-                TrailRenderer tr = _trails[i];
-                if (i < _clusters.Count)
+                for (int i = 0; i < _trails.Count; i++)
                 {
-                    SlashCluster c = _clusters[i];
-                    Vector3 worldPos = targetCamera.ViewportToWorldPoint(new Vector3(c.viewportPos.x, c.viewportPos.y, distFromCam));
-                    worldPos.z = planeZ;
+                    _trails[i].emitting = false;
+                }
+                return;
+            }
 
-                    if (!tr.emitting || Vector3.Distance(tr.transform.position, worldPos) > 2.5f)
+            Vector3[] targetPositions = new Vector3[clusterCount];
+            for (int c = 0; c < clusterCount; c++)
+            {
+                SlashCluster sc = _clusters[c];
+                Vector3 wp = targetCamera.ViewportToWorldPoint(new Vector3(sc.viewportPos.x, sc.viewportPos.y, distFromCam));
+                wp.z = planeZ;
+                targetPositions[c] = wp;
+            }
+
+            bool[] trailUsed = new bool[_trails.Count];
+            bool[] clusterAssigned = new bool[clusterCount];
+
+            // 1. Match each cluster to the nearest already-emitting trail within 2.5 world units
+            for (int c = 0; c < clusterCount; c++)
+            {
+                int bestTrail = -1;
+                float bestDist = 2.5f;
+                for (int t = 0; t < _trails.Count; t++)
+                {
+                    if (trailUsed[t] || !_trails[t].emitting)
+                        continue;
+                    float d = Vector3.Distance(_trails[t].transform.position, targetPositions[c]);
+                    if (d < bestDist)
                     {
-                        tr.emitting = false;
-                        tr.transform.position = worldPos;
-                        tr.Clear();
-                        tr.emitting = true;
-                    }
-                    else
-                    {
-                        tr.transform.position = Vector3.Lerp(tr.transform.position, worldPos, 0.65f);
-                        tr.emitting = true;
+                        bestDist = d;
+                        bestTrail = t;
                     }
                 }
-                else
+
+                if (bestTrail >= 0)
                 {
+                    trailUsed[bestTrail] = true;
+                    clusterAssigned[c] = true;
+                    TrailRenderer tr = _trails[bestTrail];
+                    tr.transform.position = Vector3.Lerp(tr.transform.position, targetPositions[c], 0.65f);
+                    tr.emitting = true;
+                }
+            }
+
+            // 2. Assign any remaining clusters to unused trails
+            for (int c = 0; c < clusterCount; c++)
+            {
+                if (clusterAssigned[c])
+                    continue;
+
+                for (int t = 0; t < _trails.Count; t++)
+                {
+                    if (trailUsed[t])
+                        continue;
+
+                    trailUsed[t] = true;
+                    clusterAssigned[c] = true;
+                    TrailRenderer tr = _trails[t];
                     tr.emitting = false;
+                    tr.transform.position = targetPositions[c];
+                    tr.Clear();
+                    tr.emitting = true;
+                    break;
+                }
+            }
+
+            // 3. Disable trails that were not matched this frame
+            for (int t = 0; t < _trails.Count; t++)
+            {
+                if (!trailUsed[t])
+                {
+                    _trails[t].emitting = false;
                 }
             }
         }

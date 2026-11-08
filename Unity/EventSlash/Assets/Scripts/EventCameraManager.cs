@@ -42,7 +42,8 @@ namespace EventSlash
         public int camWidth = 640;
         public int camHeight = 480;
         public string statusMessage = "Gotowy";
-        public string activeRawFileName = "recording_2026-10-14_11-42-46.raw";
+        public string activeRawFileName = "";
+        private string _resolvedRawFileArg = "";
 
         private Texture2D _eventTexture;
         private byte[] _latestFrameBytes;
@@ -149,18 +150,224 @@ namespace EventSlash
             return Path.GetFullPath(Path.Combine(Application.dataPath, "../../../Konfiguracja środowiska"));
         }
 
+        public string GetConfigFilePath(string envDir)
+        {
+            DirectoryInfo cur = new DirectoryInfo(Application.dataPath);
+            while (cur != null)
+            {
+                try
+                {
+                    string candidate = Path.Combine(cur.FullName, "config.txt");
+                    if (File.Exists(candidate))
+                    {
+                        return candidate;
+                    }
+                }
+                catch (Exception)
+                {
+                    // Ignore permission errors on root drives
+                }
+                cur = cur.Parent;
+            }
+
+            if (!string.IsNullOrEmpty(envDir))
+            {
+                string inEnv = Path.Combine(envDir, "config.txt");
+                if (File.Exists(inEnv))
+                {
+                    return inEnv;
+                }
+                DirectoryInfo envParent = Directory.GetParent(envDir);
+                if (envParent != null)
+                {
+                    string inRoot = Path.Combine(envParent.FullName, "config.txt");
+                    if (File.Exists(inRoot))
+                    {
+                        return inRoot;
+                    }
+                }
+            }
+            return null;
+        }
+
+        private void ReadConfigValues(string envDir, out string configuredPython, out string configuredRawFile, out string configDir)
+        {
+            configuredPython = null;
+            configuredRawFile = null;
+            configDir = null;
+
+            string configPath = GetConfigFilePath(envDir);
+            if (string.IsNullOrEmpty(configPath) || !File.Exists(configPath))
+                return;
+
+            try
+            {
+                configDir = Path.GetDirectoryName(configPath);
+                string[] lines = File.ReadAllLines(configPath);
+                foreach (string rawLine in lines)
+                {
+                    if (string.IsNullOrWhiteSpace(rawLine))
+                        continue;
+
+                    string line = rawLine.Trim();
+                    if (line.StartsWith("#") || line.StartsWith(";") || line.StartsWith("//"))
+                        continue;
+
+                    int eqIdx = line.IndexOf('=');
+                    if (eqIdx <= 0)
+                        continue;
+
+                    string key = line.Substring(0, eqIdx).Trim().ToUpperInvariant();
+                    string val = line.Substring(eqIdx + 1).Trim().Trim('"', '\'').Trim();
+                    if (string.IsNullOrEmpty(val))
+                        continue;
+
+                    if (key == "PYTHON_EXE" || key == "PYTHON_PATH" || key == "VENV_PATH")
+                    {
+                        configuredPython = val;
+                    }
+                    else if (key == "RAW_FILE" || key == "RAW_PATH")
+                    {
+                        configuredRawFile = val;
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[EventCameraManager] Could not read config.txt: {e.Message}");
+            }
+        }
+
+        private static string TryResolvePythonCandidate(string candidatePath)
+        {
+            if (string.IsNullOrEmpty(candidatePath))
+                return null;
+
+            try
+            {
+                if (File.Exists(candidatePath))
+                    return Path.GetFullPath(candidatePath);
+
+                if (Directory.Exists(candidatePath))
+                {
+                    string inScripts = Path.Combine(candidatePath, "Scripts", "python.exe");
+                    if (File.Exists(inScripts))
+                        return Path.GetFullPath(inScripts);
+
+                    string directExe = Path.Combine(candidatePath, "python.exe");
+                    if (File.Exists(directExe))
+                        return Path.GetFullPath(directExe);
+                }
+            }
+            catch (Exception)
+            {
+                // Ignore invalid path syntax
+            }
+            return null;
+        }
+
+        private string ResolvePythonExePath(string envDir, string configuredPython, string configDir)
+        {
+            string defaultPython = Path.Combine(envDir, ".venv", "Scripts", "python.exe");
+
+            if (!string.IsNullOrEmpty(configuredPython))
+            {
+                if (Path.IsPathRooted(configuredPython))
+                {
+                    string resolved = TryResolvePythonCandidate(configuredPython);
+                    if (resolved != null)
+                        return resolved;
+                }
+                else
+                {
+                    string fromEnv = TryResolvePythonCandidate(Path.Combine(envDir, configuredPython));
+                    if (fromEnv != null)
+                        return fromEnv;
+
+                    if (!string.IsNullOrEmpty(configDir))
+                    {
+                        string fromConfigDir = TryResolvePythonCandidate(Path.Combine(configDir, configuredPython));
+                        if (fromConfigDir != null)
+                            return fromConfigDir;
+                    }
+                }
+
+                // If the path in config.txt comes from another PC and does not exist locally,
+                // fall back to the local .venv if present so the project still runs smoothly.
+                if (File.Exists(defaultPython))
+                {
+                    Debug.LogWarning($"[EventCameraManager] PYTHON_EXE from config.txt not found ('{configuredPython}'). Falling back to local '{defaultPython}'.");
+                    return defaultPython;
+                }
+
+                return configuredPython;
+            }
+
+            return defaultPython;
+        }
+
         public void DiscoverRawRecording()
         {
             try
             {
                 string envDir = GetEnvironmentFolderPath();
                 string rawDir = Path.Combine(envDir, "raw_recordings");
+
+                ReadConfigValues(envDir, out _, out string configuredRawFile, out string configDir);
+
+                if (!string.IsNullOrEmpty(configuredRawFile))
+                {
+                    string inRawDir = Path.Combine(rawDir, configuredRawFile);
+                    string inEnvDir = Path.Combine(envDir, configuredRawFile);
+                    string inConfigDir = !string.IsNullOrEmpty(configDir) ? Path.Combine(configDir, configuredRawFile) : null;
+
+                    if (File.Exists(inRawDir))
+                    {
+                        activeRawFileName = Path.GetFileName(inRawDir);
+                        _resolvedRawFileArg = $"raw_recordings/{activeRawFileName}";
+                        return;
+                    }
+                    if (File.Exists(inEnvDir))
+                    {
+                        activeRawFileName = Path.GetFileName(inEnvDir);
+                        _resolvedRawFileArg = configuredRawFile.Replace('\\', '/');
+                        return;
+                    }
+                    if (!string.IsNullOrEmpty(inConfigDir) && File.Exists(inConfigDir))
+                    {
+                        activeRawFileName = Path.GetFileName(inConfigDir);
+                        _resolvedRawFileArg = Path.GetFullPath(inConfigDir);
+                        return;
+                    }
+                    if (Path.IsPathRooted(configuredRawFile) && File.Exists(configuredRawFile))
+                    {
+                        activeRawFileName = Path.GetFileName(configuredRawFile);
+                        string fullRawDir = Path.GetFullPath(rawDir).TrimEnd('\\', '/');
+                        string fullFileDir = Path.GetDirectoryName(Path.GetFullPath(configuredRawFile))?.TrimEnd('\\', '/') ?? "";
+                        if (string.Equals(fullRawDir, fullFileDir, StringComparison.OrdinalIgnoreCase))
+                        {
+                            _resolvedRawFileArg = $"raw_recordings/{activeRawFileName}";
+                        }
+                        else
+                        {
+                            _resolvedRawFileArg = Path.GetFullPath(configuredRawFile);
+                        }
+                        return;
+                    }
+
+                    // Even if the file isn't on disk yet, keep the name from config.txt
+                    activeRawFileName = Path.GetFileName(configuredRawFile);
+                    _resolvedRawFileArg = $"raw_recordings/{activeRawFileName}";
+                    Debug.LogWarning($"[EventCameraManager] RAW_FILE from config.txt not found ('{configuredRawFile}'). Scanning raw_recordings/ as fallback.");
+                }
+
                 if (Directory.Exists(rawDir))
                 {
                     string[] files = Directory.GetFiles(rawDir, "*.raw");
                     if (files.Length > 0)
                     {
                         activeRawFileName = Path.GetFileName(files[0]);
+                        _resolvedRawFileArg = $"raw_recordings/{activeRawFileName}";
                     }
                 }
             }
@@ -177,7 +384,8 @@ namespace EventSlash
             DiscoverRawRecording();
 
             string envDir = GetEnvironmentFolderPath();
-            string pythonExe = Path.Combine(envDir, ".venv", "Scripts", "python.exe");
+            ReadConfigValues(envDir, out string configuredPython, out _, out string configDir);
+            string pythonExe = ResolvePythonExePath(envDir, configuredPython, configDir);
             string serverScript = Path.Combine(envDir, "event_stream_server.py");
 
             if (!File.Exists(pythonExe))
@@ -188,7 +396,9 @@ namespace EventSlash
             }
 
             string modeArg = mode == EventStreamMode.LiveCamera ? "live" : "raw";
-            string rawRelativePath = $"raw_recordings/{activeRawFileName}";
+            string rawRelativePath = !string.IsNullOrEmpty(_resolvedRawFileArg)
+                ? _resolvedRawFileArg
+                : $"raw_recordings/{activeRawFileName}";
             int denoiseArg = denoiseEnabled ? 1 : 0;
             string args = $"\"{serverScript}\" --mode {modeArg} --file \"{rawRelativePath}\" --port {tcpPort} --denoise {denoiseArg}";
 
@@ -520,19 +730,20 @@ namespace EventSlash
                 }
             }
 
-            // 2. Check event camera denoised motion grid & tracked hand clusters
-            int cx = Mathf.Clamp(Mathf.FloorToInt(fruitViewportPos.x * GridW), 0, GridW - 1);
-            int cy = Mathf.Clamp(Mathf.FloorToInt(fruitViewportPos.y * GridH), 0, GridH - 1);
-
-            float threshold = Mathf.Clamp(68f / Mathf.Max(0.25f, sensitivity), 25f, 180f);
+            // 2. Check verified tracked hand clusters ONLY ("no hand detected -> no registration")
+            float radiusScale = Mathf.Clamp(sensitivity, 0.5f, 1.6f) * 1.25f;
 
             lock (_dataLock)
             {
-                // Check tracked hand/extremity clusters first
+                if (_activeClusters.Count == 0)
+                {
+                    return false;
+                }
+
                 for (int i = 0; i < _activeClusters.Count; i++)
                 {
                     SlashCluster c = _activeClusters[i];
-                    if (Vector2.Distance(fruitViewportPos, c.viewportPos) <= viewportRadius * 1.35f)
+                    if (Vector2.Distance(fruitViewportPos, c.viewportPos) <= viewportRadius * radiusScale)
                     {
                         slashDirection = c.velocity.sqrMagnitude > 0.01f
                             ? c.velocity.normalized
@@ -541,43 +752,6 @@ namespace EventSlash
                             slashDirection = Vector2.up;
                         return true;
                     }
-                }
-
-                // Check local 3x3 cell neighborhood around the fruit in the 32x24 denoised motion grid
-                int maxMotion = 0;
-                int activeCount = 0;
-                Vector2 weightedOffset = Vector2.zero;
-
-                for (int dy = -1; dy <= 1; dy++)
-                {
-                    int ny = cy + dy;
-                    if (ny < 0 || ny >= GridH) continue;
-                    for (int dx = -1; dx <= 1; dx++)
-                    {
-                        int nx = cx + dx;
-                        if (nx < 0 || nx >= GridW) continue;
-                        int val = _motionGrid[ny * GridW + nx];
-                        if (val > maxMotion) maxMotion = val;
-                        if (val >= threshold * 0.75f)
-                        {
-                            activeCount++;
-                            weightedOffset += new Vector2(dx, dy) * val;
-                        }
-                    }
-                }
-
-                if (maxMotion >= threshold && activeCount >= 2)
-                {
-                    if (weightedOffset.sqrMagnitude > 0.01f)
-                    {
-                        Vector2 perp = new Vector2(-weightedOffset.y, weightedOffset.x).normalized;
-                        slashDirection = perp;
-                    }
-                    else
-                    {
-                        slashDirection = new Vector2(1f, 0.5f).normalized;
-                    }
-                    return true;
                 }
             }
 
