@@ -963,39 +963,112 @@ namespace EventSlash.Editor
 
             GameObject settingsBoard = CreateImagePanel(settingsPopup.transform, "SettingsDojoBoard",
                 sprites.GetValueOrDefault("DojoScrollBoard"), Color.white,
-                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 15f), new Vector2(840f, 620f), true);
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 10f), new Vector2(960f, 720f), true);
 
             CreateNinjaText(settingsBoard.transform, "SettingsTitle", "USTAWIENIA",
-                ninjaImpact, 62, FontStyle.Normal,
+                ninjaImpact, 54, FontStyle.Normal,
                 new Color(1.0f, 0.88f, 0.32f), new Color(0.18f, 0.05f, 0.01f),
-                new Vector2(0f, 215f), new Vector2(640f, 78f), 4.0f);
+                new Vector2(0f, 282f), new Vector2(640f, 70f), 4.0f);
 
-            Text sensLabel = CreateNinjaText(settingsBoard.transform, "SensitivityValueText",
-                "CZUŁOŚĆ DŁONI: 1.0x", ninjaImpact, 32, FontStyle.Normal,
+            Button btnTabTracking = CreateSpriteButton(settingsBoard.transform, "Btn_TabTracking",
+                sprites.GetValueOrDefault("WoodBanner"), "TRACKING (ŚLEDZENIE)", ninjaImpact, 24,
+                new Color(1.0f, 0.90f, 0.28f), new Vector2(-190f, 205f), new Vector2(350f, 60f));
+
+            Button btnTabGame = CreateSpriteButton(settingsBoard.transform, "Btn_TabGame",
+                sprites.GetValueOrDefault("WoodBanner"), "GAME (ROZGRYWKA)", ninjaImpact, 24,
+                new Color(0.82f, 0.76f, 0.68f), new Vector2(190f, 205f), new Vector2(350f, 60f));
+
+            // --- TAB 1: TRACKING ---
+            GameObject trackingTabPanel = CreateImagePanel(settingsBoard.transform, "TrackingTabPanel",
+                null, Color.clear, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero, false);
+
+            Text minSpeedLabel = CreateNinjaText(trackingTabPanel.transform, "MinHandSpeedValueText",
+                "MIN. PRĘDKOŚĆ RUCHU DŁONI: 155 px/s", ninjaImpact, 25, FontStyle.Normal,
                 new Color(1.0f, 0.96f, 0.84f), new Color(0.16f, 0.06f, 0.02f),
-                new Vector2(0f, 120f), new Vector2(560f, 44f), 3.0f);
+                new Vector2(0f, 132f), new Vector2(760f, 36f), 2.8f);
+            Slider minSpeedSlider = CreateSlider(trackingTabPanel.transform, "MinHandSpeedSlider",
+                new Vector2(0f, 96f), new Vector2(600f, 30f), 80f, 320f, 155f, false);
 
-            Slider sensSlider = CreateSlider(settingsBoard.transform, "SensitivitySlider",
-                new Vector2(0f, 72f), new Vector2(480f, 36f), 0.3f, 2.2f, 1.0f);
+            Text minThickLabel = CreateNinjaText(trackingTabPanel.transform, "MinHandThicknessValueText",
+                "GĘSTOŚĆ DETEKCJI DŁONI: 260", ninjaImpact, 25, FontStyle.Normal,
+                new Color(1.0f, 0.96f, 0.84f), new Color(0.16f, 0.06f, 0.02f),
+                new Vector2(0f, 50f), new Vector2(760f, 36f), 2.8f);
+            Slider minThickSlider = CreateSlider(trackingTabPanel.transform, "MinHandThicknessSlider",
+                new Vector2(0f, 14f), new Vector2(600f, 30f), 140f, 480f, 260f, false);
 
-            Button btnToggleBombs = CreateSpriteButton(settingsBoard.transform, "Btn_ToggleBombs",
-                sprites.GetValueOrDefault("WoodBanner"), "BOMBY W GRZE: <color=#65FF45>WŁĄCZONE</color>",
-                ninjaImpact, 26, new Color(1.0f, 0.95f, 0.82f), new Vector2(0f, 5f), new Vector2(540f, 68f));
-            Text bombsToggleLabel = btnToggleBombs.GetComponentInChildren<Text>(true);
+            Text sensLabel = CreateNinjaText(trackingTabPanel.transform, "SensitivityValueText",
+                "PROMIEŃ CIĘCIA DŁONI: 1.0x", ninjaImpact, 25, FontStyle.Normal,
+                new Color(1.0f, 0.96f, 0.84f), new Color(0.16f, 0.06f, 0.02f),
+                new Vector2(0f, -32f), new Vector2(760f, 36f), 2.8f);
+            Slider sensSlider = CreateSlider(trackingTabPanel.transform, "SensitivitySlider",
+                new Vector2(0f, -68f), new Vector2(600f, 30f), 0.4f, 2.0f, 1.0f, false);
 
-            Button btnToggleDenoise = CreateSpriteButton(settingsBoard.transform, "Btn_ToggleDenoise",
+            Button btnToggleMaxHands = CreateSpriteButton(trackingTabPanel.transform, "Btn_ToggleMaxHands",
+                sprites.GetValueOrDefault("WoodBanner"), "MAKS. DŁONIE: <color=#65FF45>2 DŁONIE</color>",
+                ninjaImpact, 22, new Color(1.0f, 0.95f, 0.82f), new Vector2(-205f, -132f), new Vector2(380f, 56f));
+            Text maxHandsToggleLabel = btnToggleMaxHands.GetComponentInChildren<Text>(true);
+
+            Button btnToggleSwayFilter = CreateSpriteButton(trackingTabPanel.transform, "Btn_ToggleSwayFilter",
+                sprites.GetValueOrDefault("WoodBanner"), "FILTR CIAŁA: <color=#65FF45>WŁĄCZONY</color>",
+                ninjaImpact, 22, new Color(1.0f, 0.95f, 0.82f), new Vector2(205f, -132f), new Vector2(380f, 56f));
+            Text swayFilterToggleLabel = btnToggleSwayFilter.GetComponentInChildren<Text>(true);
+
+            Button btnToggleDenoise = CreateSpriteButton(trackingTabPanel.transform, "Btn_ToggleDenoise",
                 sprites.GetValueOrDefault("WoodBanner"), "REDUKCJA SZUMU: <color=#65FF45>WŁĄCZONA</color>",
-                ninjaImpact, 26, new Color(1.0f, 0.95f, 0.82f), new Vector2(0f, -72f), new Vector2(540f, 68f));
+                ninjaImpact, 22, new Color(1.0f, 0.95f, 0.82f), new Vector2(0f, -196f), new Vector2(460f, 56f));
             Text denoiseToggleLabel = btnToggleDenoise.GetComponentInChildren<Text>(true);
 
-            CreateNinjaText(settingsBoard.transform, "SettingsPopupInfo",
-                "NIEBIESKI OWOC = Kamera Eventowa na żywo\nPOMARAŃCZOWY OWOC = Nagranie testowe RAW",
-                ninjaComic, 18, FontStyle.Bold, new Color(1f, 0.92f, 0.72f), new Color(0.16f, 0.06f, 0.02f),
-                new Vector2(0f, -142f), new Vector2(640f, 58f), 2.2f);
+            // --- TAB 2: GAME ---
+            GameObject gameTabPanel = CreateImagePanel(settingsBoard.transform, "GameTabPanel",
+                null, Color.clear, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero, false);
+
+            Text spawnRateLabel = CreateNinjaText(gameTabPanel.transform, "SpawnRateValueText",
+                "TEMPO WYRZUTU OWOCÓW: 1.0x", ninjaImpact, 24, FontStyle.Normal,
+                new Color(1.0f, 0.96f, 0.84f), new Color(0.16f, 0.06f, 0.02f),
+                new Vector2(0f, 136f), new Vector2(760f, 34f), 2.8f);
+            Slider spawnRateSlider = CreateSlider(gameTabPanel.transform, "SpawnRateSlider",
+                new Vector2(0f, 102f), new Vector2(600f, 28f), 0.5f, 2.0f, 1.0f, false);
+
+            Text fruitSizeLabel = CreateNinjaText(gameTabPanel.transform, "FruitSizeValueText",
+                "ROZMIAR OWOCÓW: 1.0x", ninjaImpact, 24, FontStyle.Normal,
+                new Color(1.0f, 0.96f, 0.84f), new Color(0.16f, 0.06f, 0.02f),
+                new Vector2(0f, 60f), new Vector2(760f, 34f), 2.8f);
+            Slider fruitSizeSlider = CreateSlider(gameTabPanel.transform, "FruitSizeSlider",
+                new Vector2(0f, 26f), new Vector2(600f, 28f), 0.7f, 1.5f, 1.0f, false);
+
+            Text maxLivesLabel = CreateNinjaText(gameTabPanel.transform, "MaxLivesValueText",
+                "LICZBA ŻYĆ NA START: 3 ♥", ninjaImpact, 24, FontStyle.Normal,
+                new Color(1.0f, 0.96f, 0.84f), new Color(0.16f, 0.06f, 0.02f),
+                new Vector2(0f, -16f), new Vector2(760f, 34f), 2.8f);
+            Slider maxLivesSlider = CreateSlider(gameTabPanel.transform, "MaxLivesSlider",
+                new Vector2(-65f, -50f), new Vector2(470f, 28f), 1f, 5f, 3f, true);
+            Button btnToggleLives = CreateSpriteButton(gameTabPanel.transform, "Btn_ToggleLives",
+                sprites.GetValueOrDefault("WoodBanner"), "[<color=#65FF45>✔</color>] ♥",
+                ninjaImpact, 22, new Color(1.0f, 0.95f, 0.82f), new Vector2(240f, -50f), new Vector2(115f, 44f));
+            Text livesToggleLabel = btnToggleLives.GetComponentInChildren<Text>(true);
+
+            Text bombChanceLabel = CreateNinjaText(gameTabPanel.transform, "BombChanceValueText",
+                "CZĘSTOTLIWOŚĆ BOMB: 18%", ninjaImpact, 24, FontStyle.Normal,
+                new Color(1.0f, 0.96f, 0.84f), new Color(0.16f, 0.06f, 0.02f),
+                new Vector2(0f, -92f), new Vector2(760f, 34f), 2.8f);
+            Slider bombChanceSlider = CreateSlider(gameTabPanel.transform, "BombChanceSlider",
+                new Vector2(0f, -126f), new Vector2(600f, 28f), 0.05f, 0.45f, 0.18f, false);
+
+            Button btnToggleBombs = CreateSpriteButton(gameTabPanel.transform, "Btn_ToggleBombs",
+                sprites.GetValueOrDefault("WoodBanner"), "BOMBY W GRZE: <color=#65FF45>WŁĄCZONE</color>",
+                ninjaImpact, 23, new Color(1.0f, 0.95f, 0.82f), new Vector2(0f, -190f), new Vector2(480f, 56f));
+            Text bombsToggleLabel = btnToggleBombs.GetComponentInChildren<Text>(true);
+
+            gameTabPanel.SetActive(false);
+
+            // --- FOOTER BUTTONS (DOMYŚLNE + ZAMKNIJ) ---
+            Button btnResetDefaults = CreateSpriteButton(settingsBoard.transform, "Btn_ResetDefaults",
+                sprites.GetValueOrDefault("WoodBanner"), "DOMYŚLNE", ninjaImpact, 28,
+                new Color(1.0f, 0.82f, 0.45f), new Vector2(-195f, -275f), new Vector2(330f, 66f));
 
             Button btnCloseSettings = CreateSpriteButton(settingsBoard.transform, "Btn_CloseSettings",
-                sprites.GetValueOrDefault("WoodBanner"), "ZAMKNIJ", ninjaImpact, 30,
-                new Color(1.0f, 0.94f, 0.58f), new Vector2(0f, -218f), new Vector2(320f, 76f));
+                sprites.GetValueOrDefault("WoodBanner"), "ZAMKNIJ", ninjaImpact, 28,
+                new Color(1.0f, 0.94f, 0.58f), new Vector2(195f, -275f), new Vector2(330f, 66f));
 
             settingsPopup.SetActive(false);
 
@@ -1119,10 +1192,37 @@ namespace EventSlash.Editor
 
             gameMgr.menuStatusText = menuStatus;
             gameMgr.menuProfileBestText = profileBestText;
+            gameMgr.trackingTabPanel = trackingTabPanel;
+            gameMgr.gameTabPanel = gameTabPanel;
+            gameMgr.btnTabTracking = btnTabTracking;
+            gameMgr.btnTabGame = btnTabGame;
+            gameMgr.btnResetDefaults = btnResetDefaults;
+
+            gameMgr.minHandSpeedSlider = minSpeedSlider;
+            gameMgr.minHandSpeedValueText = minSpeedLabel;
+            gameMgr.minHandThicknessSlider = minThickSlider;
+            gameMgr.minHandThicknessValueText = minThickLabel;
             gameMgr.sensitivitySlider = sensSlider;
             gameMgr.sensitivityValueText = sensLabel;
-            gameMgr.bombsToggleText = bombsToggleLabel;
+            gameMgr.btnToggleMaxHands = btnToggleMaxHands;
+            gameMgr.maxHandsToggleText = maxHandsToggleLabel;
+            gameMgr.btnToggleSwayFilter = btnToggleSwayFilter;
+            gameMgr.swayFilterToggleText = swayFilterToggleLabel;
+            gameMgr.btnToggleDenoise = btnToggleDenoise;
             gameMgr.denoiseToggleText = denoiseToggleLabel;
+
+            gameMgr.spawnRateSlider = spawnRateSlider;
+            gameMgr.spawnRateValueText = spawnRateLabel;
+            gameMgr.fruitSizeSlider = fruitSizeSlider;
+            gameMgr.fruitSizeValueText = fruitSizeLabel;
+            gameMgr.maxLivesSlider = maxLivesSlider;
+            gameMgr.maxLivesValueText = maxLivesLabel;
+            gameMgr.btnToggleLives = btnToggleLives;
+            gameMgr.livesToggleText = livesToggleLabel;
+            gameMgr.bombChanceSlider = bombChanceSlider;
+            gameMgr.bombChanceValueText = bombChanceLabel;
+            gameMgr.btnToggleBombs = btnToggleBombs;
+            gameMgr.bombsToggleText = bombsToggleLabel;
 
             gameMgr.liveModeSelector = liveSelector;
             gameMgr.rawModeSelector = rawSelector;
@@ -1131,8 +1231,6 @@ namespace EventSlash.Editor
             gameMgr.btnGameOverMenu = btnBackOver;
             gameMgr.btnToggleSettings = btnSettings;
             gameMgr.btnCloseSettings = btnCloseSettings;
-            gameMgr.btnToggleBombs = btnToggleBombs;
-            gameMgr.btnToggleDenoise = btnToggleDenoise;
 
             hudPanel.SetActive(false);
             gameOverPanel.SetActive(false);
@@ -1356,7 +1454,7 @@ namespace EventSlash.Editor
             return btn;
         }
 
-        private static Slider CreateSlider(Transform parent, string name, Vector2 anchoredPos, Vector2 sizeDelta, float minVal, float maxVal, float defaultVal)
+        private static Slider CreateSlider(Transform parent, string name, Vector2 anchoredPos, Vector2 sizeDelta, float minVal, float maxVal, float defaultVal, bool wholeNumbers = false)
         {
             GameObject sliderObj = new GameObject(name);
             sliderObj.transform.SetParent(parent, false);
@@ -1395,6 +1493,7 @@ namespace EventSlash.Editor
             slider.handleRect = handle.GetComponent<RectTransform>();
             slider.targetGraphic = handle.GetComponent<Image>();
             slider.direction = Slider.Direction.LeftToRight;
+            slider.wholeNumbers = wholeNumbers;
             slider.minValue = minVal;
             slider.maxValue = maxVal;
             slider.value = defaultVal;

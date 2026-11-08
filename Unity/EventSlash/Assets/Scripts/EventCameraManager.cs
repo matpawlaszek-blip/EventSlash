@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Net.Sockets;
 using System.Threading;
@@ -29,12 +30,26 @@ namespace EventSlash
     {
         public static EventCameraManager Instance { get; private set; }
 
-        [Header("Event Camera Settings")]
+        public const float DefaultSensitivity = 1.0f;
+        public const float DefaultMinHandSpeed = 155.0f;
+        public const float DefaultMinHandThickness = 260.0f;
+        public const int DefaultMaxHands = 2;
+        public const bool DefaultSwayFilterEnabled = true;
+        public const bool DefaultDenoiseEnabled = true;
+
+        [Header("Event Camera & Hand Tracking Settings")]
         public Renderer screenRenderer;
         public int tcpPort = 5055;
-        [Range(0.2f, 2.5f)]
-        public float sensitivity = 1.0f;
-        public bool denoiseEnabled = true;
+        [Range(0.4f, 2.0f)]
+        public float sensitivity = DefaultSensitivity;
+        [Range(80f, 320f)]
+        public float minHandSpeed = DefaultMinHandSpeed;
+        [Range(140f, 480f)]
+        public float minHandThickness = DefaultMinHandThickness;
+        [Range(1, 2)]
+        public int maxHands = DefaultMaxHands;
+        public bool swayFilterEnabled = DefaultSwayFilterEnabled;
+        public bool denoiseEnabled = DefaultDenoiseEnabled;
 
         [Header("Runtime Status")]
         public EventStreamMode currentMode = EventStreamMode.RawRecording;
@@ -400,7 +415,14 @@ namespace EventSlash
                 ? _resolvedRawFileArg
                 : $"raw_recordings/{activeRawFileName}";
             int denoiseArg = denoiseEnabled ? 1 : 0;
-            string args = $"\"{serverScript}\" --mode {modeArg} --file \"{rawRelativePath}\" --port {tcpPort} --denoise {denoiseArg}";
+            int swayArg = swayFilterEnabled ? 1 : 0;
+            int maxHandsArg = Mathf.Clamp(maxHands, 1, 2);
+            string minSpeedArg = minHandSpeed.ToString("F1", CultureInfo.InvariantCulture);
+            string minThickArg = minHandThickness.ToString("F1", CultureInfo.InvariantCulture);
+
+            string args = $"\"{serverScript}\" --mode {modeArg} --file \"{rawRelativePath}\" --port {tcpPort} " +
+                          $"--denoise {denoiseArg} --min-speed {minSpeedArg} --min-thickness {minThickArg} " +
+                          $"--max-hands {maxHandsArg} --sway-filter {swayArg}";
 
             try
             {
@@ -731,7 +753,7 @@ namespace EventSlash
             }
 
             // 2. Check verified tracked hand clusters ONLY ("no hand detected -> no registration")
-            float radiusScale = Mathf.Clamp(sensitivity, 0.5f, 1.6f) * 1.25f;
+            float radiusScale = Mathf.Clamp(sensitivity, 0.4f, 2.0f) * 1.25f;
 
             lock (_dataLock)
             {

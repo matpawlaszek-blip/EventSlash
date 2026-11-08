@@ -69,10 +69,24 @@ class MetavisionHandTracker:
          - Enforces strict hand verification (no hand detected -> zero clusters & zero motion_grid).
     """
 
-    def __init__(self, width, height, denoise=True):
+    def __init__(
+        self,
+        width,
+        height,
+        denoise=True,
+        min_speed=155.0,
+        min_thickness=260.0,
+        max_hands=2,
+        sway_filter=True,
+    ):
         self.width = width
         self.height = height
-        self.denoise = denoise
+        self.denoise = bool(denoise)
+        self.min_speed = float(np.clip(min_speed, 50.0, 450.0))
+        self.min_thickness = float(np.clip(min_thickness, 100.0, 600.0))
+        self.max_hands = int(np.clip(max_hands, 1, 2))
+        self.sway_filter = bool(sway_filter)
+
         self.gh = height // 8
         self.gw = width // 8
 
@@ -115,7 +129,7 @@ class MetavisionHandTracker:
 
         n3 = cv2.boxFilter(act, ddepth=cv2.CV_16U, ksize=(3, 3), normalize=False)
 
-        # 2. Render visual frame on the light wooden background
+        # 2. Render visual frame on the light wooden background (horizontally mirrored for natural selfie view)
         if render_evs.size > 0:
             if self.denoise:
                 x = clean_evs["x"]
@@ -128,10 +142,14 @@ class MetavisionHandTracker:
                 n5 = cv2.boxFilter(act, ddepth=cv2.CV_16U, ksize=(5, 5), normalize=False)
                 vis_mask = (act > 0) & (n3 >= 2) & (n5 >= 5)
 
-                frame[vis_mask & (pol == 2)] = (255, 252, 240)
-                frame[vis_mask & (pol == 1)] = (26, 14, 5)
+                # Mirror horizontally so player movement on screen matches real-world left/right
+                vis_mask_mirrored = np.fliplr(vis_mask)
+                pol_mirrored = np.fliplr(pol)
+
+                frame[vis_mask_mirrored & (pol_mirrored == 2)] = (255, 252, 240)
+                frame[vis_mask_mirrored & (pol_mirrored == 1)] = (26, 14, 5)
             else:
-                rx = render_evs["x"]
+                rx = (w - 1) - render_evs["x"]
                 ry = render_evs["y"]
                 rp = render_evs["p"].astype(bool)
                 frame[ry[rp], rx[rp]] = (255, 252, 240)
@@ -154,60 +172,64 @@ class MetavisionHandTracker:
         tot_dense = int(dense_mask.sum())
 
         # 5. Detect Upright Body Silhouette & Full-Body Sway
-        r_hip0, r_hip1 = int(gh * 0.76), gh
-        r_chst0, r_chst1 = int(gh * 0.33), int(gh * 0.76)
-        r_up0, r_up1 = 0, int(gh * 0.50)
-
-        col_hip = sil_mask[r_hip0:r_hip1, :].sum(axis=0) >= 4
-        col_chest = sil_mask[r_chst0:r_chst1, :].sum(axis=0) >= 6
-        col_upper = sil_mask[r_up0:r_up1, :].sum(axis=0) >= 4
-
-        k5 = np.ones((1, 5), dtype=np.uint8)
-        hip_d = cv2.dilate(col_hip.astype(np.uint8)[None, :], k5)[0] > 0
-        chest_d = cv2.dilate(col_chest.astype(np.uint8)[None, :], k5)[0] > 0
-        upper_d = cv2.dilate(col_upper.astype(np.uint8)[None, :], np.ones((1, 9), dtype=np.uint8))[0] > 0
-
-        torso_cols = np.where(hip_d & chest_d)[0]
-        upright_cols = np.where(hip_d & chest_d & upper_d)[0]
-        upper_sil = int(sil_mask[r_up0:r_up1, :].sum())
-        bottom_base_sil = int(sil_mask[r_hip0:r_hip1, :].sum())
-
         torso_col_mask = np.zeros((gh, gw), dtype=bool)
         has_upright_torso = False
-        if torso_cols.size >= 14 and upright_cols.size >= 8 and upper_sil >= 75 and bottom_base_sil >= 85:
-            tx0, tx1 = int(torso_cols[0]), int(torso_cols[-1])
-            tw_cols = tx1 - tx0 + 1
-            if tw_cols >= 15:
-                has_upright_torso = True
-                cx_px = 0.5 * (tx0 + tx1 + 1) * 8.0
-                self.torso_x_center = 0.6 * self.torso_x_center + 0.4 * cx_px
-                self.torso_half_w = float(np.clip(tw_cols * 4.0 + 16.0, 110.0, 165.0))
-                torso_col_mask[int(gh * 0.26) : gh, max(0, tx0 - 3) : min(gw, tx1 + 4)] = True
-                hx0 = max(0, int((self.torso_x_center - 90.0) // 8))
-                hx1 = min(gw, int((self.torso_x_center + 90.0) // 8) + 1)
-                torso_col_mask[0 : int(gh * 0.37), hx0:hx1] = True
 
-        torso_sil = int(sil_mask[torso_col_mask].sum()) if has_upright_torso else 0
-        outside_sil = tot_sil - torso_sil
+        if self.sway_filter:
+            r_hip0, r_hip1 = int(gh * 0.76), gh
+            r_chst0, r_chst1 = int(gh * 0.33), int(gh * 0.76)
+            r_up0, r_up1 = 0, int(gh * 0.50)
 
-        is_heavy_body_sway = has_upright_torso and bottom_base_sil >= 105 and (
-            (tot_sil >= 650) or (tot_dense >= 335)
-        )
+            col_hip = sil_mask[r_hip0:r_hip1, :].sum(axis=0) >= 4
+            col_chest = sil_mask[r_chst0:r_chst1, :].sum(axis=0) >= 6
+            col_upper = sil_mask[r_up0:r_up1, :].sum(axis=0) >= 4
 
-        if is_heavy_body_sway:
-            self.body_sway_cooldown = 18  # ~300 ms cooldown across sway turnarounds
-        elif self.body_sway_cooldown > 0:
-            if (
-                torso_cols.size >= 11
-                and tot_sil >= 240
-                and bottom_base_sil >= 65
-                and outside_sil < max(130, torso_sil * 0.45)
-            ):
-                self.body_sway_cooldown = max(self.body_sway_cooldown - 1, 10)
-            elif tot_sil >= 380 and bottom_base_sil >= 95:
-                self.body_sway_cooldown = max(self.body_sway_cooldown - 1, 8)
-            else:
-                self.body_sway_cooldown -= 1
+            k5 = np.ones((1, 5), dtype=np.uint8)
+            hip_d = cv2.dilate(col_hip.astype(np.uint8)[None, :], k5)[0] > 0
+            chest_d = cv2.dilate(col_chest.astype(np.uint8)[None, :], k5)[0] > 0
+            upper_d = cv2.dilate(col_upper.astype(np.uint8)[None, :], np.ones((1, 9), dtype=np.uint8))[0] > 0
+
+            torso_cols = np.where(hip_d & chest_d)[0]
+            upright_cols = np.where(hip_d & chest_d & upper_d)[0]
+            upper_sil = int(sil_mask[r_up0:r_up1, :].sum())
+            bottom_base_sil = int(sil_mask[r_hip0:r_hip1, :].sum())
+
+            if torso_cols.size >= 14 and upright_cols.size >= 8 and upper_sil >= 75 and bottom_base_sil >= 85:
+                tx0, tx1 = int(torso_cols[0]), int(torso_cols[-1])
+                tw_cols = tx1 - tx0 + 1
+                if tw_cols >= 15:
+                    has_upright_torso = True
+                    cx_px = 0.5 * (tx0 + tx1 + 1) * 8.0
+                    self.torso_x_center = 0.6 * self.torso_x_center + 0.4 * cx_px
+                    self.torso_half_w = float(np.clip(tw_cols * 4.0 + 16.0, 110.0, 165.0))
+                    torso_col_mask[int(gh * 0.26) : gh, max(0, tx0 - 3) : min(gw, tx1 + 4)] = True
+                    hx0 = max(0, int((self.torso_x_center - 90.0) // 8))
+                    hx1 = min(gw, int((self.torso_x_center + 90.0) // 8) + 1)
+                    torso_col_mask[0 : int(gh * 0.37), hx0:hx1] = True
+
+            torso_sil = int(sil_mask[torso_col_mask].sum()) if has_upright_torso else 0
+            outside_sil = tot_sil - torso_sil
+
+            is_heavy_body_sway = has_upright_torso and bottom_base_sil >= 105 and (
+                (tot_sil >= 650) or (tot_dense >= 335)
+            )
+
+            if is_heavy_body_sway:
+                self.body_sway_cooldown = 18  # ~300 ms cooldown across sway turnarounds
+            elif self.body_sway_cooldown > 0:
+                if (
+                    torso_cols.size >= 11
+                    and tot_sil >= 240
+                    and bottom_base_sil >= 65
+                    and outside_sil < max(130, torso_sil * 0.45)
+                ):
+                    self.body_sway_cooldown = max(self.body_sway_cooldown - 1, 10)
+                elif tot_sil >= 380 and bottom_base_sil >= 95:
+                    self.body_sway_cooldown = max(self.body_sway_cooldown - 1, 8)
+                else:
+                    self.body_sway_cooldown -= 1
+        else:
+            self.body_sway_cooldown = 0
 
         self.cell_ema = 0.85 * self.cell_ema + 0.15 * cell_fill
 
@@ -216,13 +238,15 @@ class MetavisionHandTracker:
             return frame_BottomUp, motion_grid, []
 
         # 6. Bin fast optical flow events into the 8x8 cell grid
+        # Scale per-event flow speed cutoff with user-configured min_speed (default 155 -> 135 px/s)
+        event_speed_cutoff = max(55.0, self.min_speed * (135.0 / 155.0))
         cell_fast = np.zeros((gh, gw), dtype=np.float32)
         cell_vx = np.zeros((gh, gw), dtype=np.float32)
         cell_vy = np.zeros((gh, gw), dtype=np.float32)
         if fl.size > 0:
             sp = np.hypot(fl["vx"], fl["vy"])
             ok = (
-                (sp >= 135.0)
+                (sp >= event_speed_cutoff)
                 & (fl["x"] >= 0)
                 & (fl["x"] < gw * 8)
                 & (fl["y"] >= 0)
@@ -251,6 +275,13 @@ class MetavisionHandTracker:
         limb_mask = cv2.morphologyEx(limb_mask, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
 
         n_comp, labels, stats, _ = cv2.connectedComponentsWithStats(limb_mask, connectivity=8)
+
+        # Thresholds scaled from user settings (exact match to verified defaults at min_thickness=260, min_speed=155)
+        thick_ratio = self.min_thickness / 260.0
+        speed_ratio = self.min_speed / 155.0
+        req_dense = float(np.clip(12.0 * thick_ratio, 6.0, 22.0))
+        req_thick = self.min_thickness
+        req_fast = float(np.clip(65.0 * (0.65 * thick_ratio + 0.35 * speed_ratio), 25.0, 140.0))
 
         candidates = []
         for c in range(1, n_comp):
@@ -284,47 +315,49 @@ class MetavisionHandTracker:
                 f_val = float(fast5[by, bx])
 
                 # Strict hand verification: dense 2D core + fast optical flow
-                if d_val < 12.0 or th_val < 260.0 or f_val < 65.0:
+                if d_val < req_dense or th_val < req_thick or f_val < req_fast:
                     continue
 
                 mvx = float(vx5[by, bx]) / max(f_val, 1.0)
                 mvy = float(vy5[by, bx]) / max(f_val, 1.0)
                 mspd = float(np.hypot(mvx, mvy))
-                if mspd < 155.0:
+                if mspd < self.min_speed:
                     continue
 
                 px = (bx + 0.5) * 8.0
                 py = (by + 0.5) * 8.0
 
-                # Suppress chest/torso interior unless extreme hand activity is right in front of the chest
-                if has_upright_torso and torso_col_mask[by, bx]:
-                    if th_val < 650.0 or f_val < 240.0 or d_val < 19.0:
+                if self.sway_filter:
+                    # Suppress chest/torso interior unless extreme hand activity is right in front of the chest
+                    if has_upright_torso and torso_col_mask[by, bx]:
+                        if th_val < 650.0 or f_val < 240.0 or d_val < 19.0:
+                            continue
+
+                    # Suppress lower-hip/waist edge when lowering arms at bottom of screen
+                    if py >= h * 0.885 and (th_val < 600.0 or f_val < 220.0):
                         continue
 
-                # Suppress lower-hip/waist edge when lowering arms at bottom of screen
-                if py >= h * 0.885 and (th_val < 600.0 or f_val < 220.0):
-                    continue
+                    # Suppress head region (top-center above chest/neck silhouette)
+                    if py <= h * 0.325 and abs(px - self.torso_x_center) <= 95.0:
+                        below_sil = int(
+                            sil_mask[
+                                min(gh - 1, by + 4) : min(gh, by + 22),
+                                max(0, bx - 6) : min(gw, bx + 7),
+                            ].sum()
+                        )
+                        if below_sil >= 18 and (th_val < 900.0 or f_val < 500.0):
+                            continue
 
-                # Suppress head region (top-center above chest/neck silhouette)
-                if py <= h * 0.325 and abs(px - self.torso_x_center) <= 95.0:
-                    below_sil = int(
-                        sil_mask[
-                            min(gh - 1, by + 4) : min(gh, by + 22),
-                            max(0, bx - 6) : min(gw, bx + 7),
-                        ].sum()
-                    )
-                    if below_sil >= 18 and (th_val < 900.0 or f_val < 500.0):
-                        continue
-
-                u = float(np.clip(px / w, 0.0, 1.0))
+                # Mirror horizontally (u -> 1 - u, vu -> -vu) to match the mirrored video feed
+                u = float(np.clip(1.0 - (px / w), 0.0, 1.0))
                 v = float(np.clip(1.0 - (py / h), 0.0, 1.0))
-                vu = float(mvx / w)
+                vu = float(-mvx / w)
                 vv = float(-mvy / h)
                 intensity = float(min(1.0, (th_val / 600.0) * (mspd / 200.0)))
                 score = th_val * np.sqrt(f_val) * (mspd / 200.0)
                 candidates.append((score, px, py, u, v, vu, vv, intensity))
 
-        # 8. Non-maximum suppression: at most 2 hands, minimum 130 px apart
+        # 8. Non-maximum suppression: at most max_hands, minimum 130 px apart
         candidates.sort(key=lambda item: item[0], reverse=True)
         selected = []
         for cand in candidates:
@@ -332,7 +365,7 @@ class MetavisionHandTracker:
             if any(np.hypot(px - sx, py - sy) < 130.0 for sx, sy, *_ in selected):
                 continue
             selected.append((px, py, u, v, vu, vv, intensity))
-            if len(selected) >= MAX_CLUSTERS:
+            if len(selected) >= self.max_hands:
                 break
 
         # Sort selected hands left-to-right (by u) so 2-hand trail assignment stays consistent
@@ -363,7 +396,7 @@ def send_all(sock, data):
         total += sent
 
 
-def stream_to_client(conn, mode, raw_file, delta_t, denoise):
+def stream_to_client(conn, mode, raw_file, delta_t, denoise, min_speed, min_thickness, max_hands, sway_filter):
     while True:
         input_arg = "" if mode == "live" else raw_file
         try:
@@ -374,10 +407,19 @@ def stream_to_client(conn, mode, raw_file, delta_t, denoise):
             time.sleep(0.5)
             break
 
-        tracker = MetavisionHandTracker(width, height, denoise=denoise)
+        tracker = MetavisionHandTracker(
+            width,
+            height,
+            denoise=denoise,
+            min_speed=min_speed,
+            min_thickness=min_thickness,
+            max_hands=max_hands,
+            sway_filter=sway_filter,
+        )
         print(
-            f"[EventSlash Server] Streaming {mode} ({width}x{height}) using Metavision SDK CV "
-            f"(Hand-Only Tracker), denoise={denoise}",
+            f"[EventSlash Server] Streaming {mode} ({width}x{height}) | "
+            f"min_speed={min_speed:.0f}px/s, min_thickness={min_thickness:.0f}, "
+            f"max_hands={max_hands}, sway_filter={sway_filter}, denoise={denoise}",
             flush=True,
         )
 
@@ -429,6 +471,10 @@ def main():
     parser.add_argument("--port", type=int, default=5055)
     parser.add_argument("--delta-t", type=int, default=16666)
     parser.add_argument("--denoise", type=int, default=1, help="1 to filter isolated noise pixels from frame, 0 for raw")
+    parser.add_argument("--min-speed", type=float, default=155.0, help="Minimum hand speed in px/s required to register")
+    parser.add_argument("--min-thickness", type=float, default=260.0, help="Minimum 2D hand thickness score required")
+    parser.add_argument("--max-hands", type=int, default=2, help="Maximum simultaneous hands tracked (1 or 2)")
+    parser.add_argument("--sway-filter", type=int, default=1, help="1 to suppress full-body sway & torso/head, 0 to disable")
     parser.add_argument("--once", action="store_true", help="Exit after first client disconnects")
     args = parser.parse_args()
 
@@ -447,7 +493,17 @@ def main():
             conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             print(f"[EventSlash Server] Client connected from {addr}", flush=True)
             try:
-                stream_to_client(conn, args.mode, args.file, args.delta_t, bool(args.denoise))
+                stream_to_client(
+                    conn,
+                    args.mode,
+                    args.file,
+                    args.delta_t,
+                    bool(args.denoise),
+                    args.min_speed,
+                    args.min_thickness,
+                    args.max_hands,
+                    bool(args.sway_filter),
+                )
             except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, ConnectionError):
                 print("[EventSlash Server] Client disconnected.", flush=True)
             except Exception:

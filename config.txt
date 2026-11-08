@@ -14,4 +14,4 @@ PYTHON_EXE = C:\Users\matpa\Desktop\EventSlash\Konfiguracja środowiska\.venv\Sc
 #    (lub pełna ścieżka do pliku .raw), którego chcesz używać w trybie odtwarzania.
 #    (Name of the .raw file in "raw_recordings" or full path to a .raw file).
 #
-RAW_FILE = recording_2026-11-04_10-58-39.raw
+RAW_FILE = recording_2026-10-14_11-42-46.raw
