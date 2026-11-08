@@ -115,8 +115,8 @@ PythonBackend/__pycache__/
 **/__pycache__/
 *.pyc
 
-PythonBackend/raw_recordings/
-**/raw_recordings/
+PythonBackend/raw_recordings/*
+!PythonBackend/raw_recordings/.gitkeep
 
 PythonBackend/Sterowniki do kamery eventowej/
 *.tmp_index
