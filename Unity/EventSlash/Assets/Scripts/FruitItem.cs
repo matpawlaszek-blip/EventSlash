@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace EventSlash
@@ -6,6 +7,7 @@ namespace EventSlash
     /// Represents a whole 3D fruit, bomb, or multi-slice Pomegranate launched upward from the bottom of the screen.
     /// Detects hand slashes from the EventCameraManager:
     /// - Normal fruit: splits into Half_A and Half_B with a juice splash.
+    /// - Bonus outlined fruit: has a 2D white silhouette outline and awards extra points (3x).
     /// - Bomb: explodes and ends the game if sliced; harmlessly falls off if avoided.
     /// - Pomegranate: enters a slow-motion multi-slice frenzy where the camera zooms, tilts, and shakes
     ///   on every slash, then explodes into many 3D pomegranate pieces shot to every side,
@@ -17,6 +19,7 @@ namespace EventSlash
         public string fruitName = "Fruit";
         public bool isBomb;
         public bool isPomegranate;
+        public bool isBonusOutlined;
         public GameObject halfAPrefab;
         public GameObject halfBPrefab;
         public GameObject piecePrefab;
@@ -24,6 +27,13 @@ namespace EventSlash
         public Vector3 localCutSeparationAxis = Vector3.right;
         public float viewportHitRadius = 0.085f;
         public int scorePoints = 1;
+
+        private static Material _whiteOutlineMaterial;
+        private readonly List<Transform> _outlineRingTransforms = new List<Transform>();
+        private readonly List<Transform> _outlineSourceTransforms = new List<Transform>();
+        private readonly List<Vector2> _outlineScreenDirs = new List<Vector2>();
+        private float _outlineWorldThickness = 0.07f;
+        private ParticleSystem _bonusTrailPs;
 
         [Header("Ballistics")]
         public Vector3 velocity;
@@ -99,6 +109,29 @@ namespace EventSlash
             else if (!_hasEnteredScreen && transform.position.y < missThresholdY - 3.0f)
             {
                 Destroy(gameObject);
+            }
+        }
+
+        private void LateUpdate()
+        {
+            if (!isBonusOutlined || _outlineRingTransforms.Count == 0)
+                return;
+
+            // Keep the 8 white silhouette copies offset in 2D screen (X, Y) and pushed behind the fruit in +Z
+            // so the 3D fruit always renders cleanly in front while a bold 2D white border surrounds its contour.
+            for (int i = 0; i < _outlineRingTransforms.Count; i++)
+            {
+                Transform outTr = _outlineRingTransforms[i];
+                Transform srcTr = _outlineSourceTransforms[i];
+                if (outTr == null || srcTr == null) continue;
+
+                Vector2 dir = _outlineScreenDirs[i];
+                outTr.position = srcTr.position + new Vector3(
+                    dir.x * _outlineWorldThickness,
+                    dir.y * _outlineWorldThickness,
+                    0.85f
+                );
+                outTr.rotation = srcTr.rotation;
             }
         }
 
@@ -254,6 +287,15 @@ namespace EventSlash
                 {
                     EventSlashGameManager.Instance.OnFruitSliced(this, transform.position);
                 }
+            }
+
+            if (_bonusTrailPs != null)
+            {
+                _bonusTrailPs.transform.SetParent(null, true);
+                var em = _bonusTrailPs.emission;
+                em.enabled = false;
+                Destroy(_bonusTrailPs.gameObject, 0.8f);
+                _bonusTrailPs = null;
             }
 
             Destroy(gameObject);
@@ -565,6 +607,120 @@ namespace EventSlash
             AssignParticleMaterial(fxObj, juiceColor);
             ps.Play();
             Destroy(fxObj, 1.2f);
+        }
+
+        /// <summary>
+        /// Creates a bold, flat unlit 2D white silhouette outline around the 3D fruit by rendering
+        /// an 8-direction 2D screen-space offset ring of pure-white unlit copies directly behind the 3D mesh.
+        /// Works on any single- or multi-submesh FBX model without requiring CPU mesh read/write.
+        /// </summary>
+        public void Apply2DWhiteOutline(float outlineThickness = 0.07f)
+        {
+            isBonusOutlined = true;
+            _outlineWorldThickness = outlineThickness;
+
+            if (_whiteOutlineMaterial == null)
+            {
+                Shader unlitShader = Shader.Find("Universal Render Pipeline/Unlit");
+                if (unlitShader == null) unlitShader = Shader.Find("Unlit/Color");
+                if (unlitShader == null) unlitShader = Shader.Find("Sprites/Default");
+
+                if (unlitShader != null)
+                {
+                    _whiteOutlineMaterial = new Material(unlitShader);
+                    _whiteOutlineMaterial.color = Color.white;
+                    if (_whiteOutlineMaterial.HasProperty("_BaseColor"))
+                        _whiteOutlineMaterial.SetColor("_BaseColor", Color.white);
+                }
+            }
+
+            if (_whiteOutlineMaterial == null) return;
+
+            _outlineRingTransforms.Clear();
+            _outlineSourceTransforms.Clear();
+            _outlineScreenDirs.Clear();
+
+            MeshFilter[] filters = GetComponentsInChildren<MeshFilter>(true);
+            const int directions = 8;
+
+            foreach (MeshFilter mf in filters)
+            {
+                if (mf == null || mf.sharedMesh == null || mf.gameObject.name.StartsWith("Outline2D_"))
+                    continue;
+
+                Mesh srcMesh = mf.sharedMesh;
+                int subCount = Mathf.Max(1, srcMesh.subMeshCount);
+                Material[] whiteMats = new Material[subCount];
+                for (int s = 0; s < subCount; s++)
+                {
+                    whiteMats[s] = _whiteOutlineMaterial;
+                }
+
+                for (int d = 0; d < directions; d++)
+                {
+                    float ang = (d / (float)directions) * Mathf.PI * 2.0f;
+                    Vector2 dir = new Vector2(Mathf.Cos(ang), Mathf.Sin(ang));
+
+                    GameObject outlineObj = new GameObject($"Outline2D_{d}");
+                    outlineObj.transform.SetParent(mf.transform, false);
+                    outlineObj.transform.localPosition = Vector3.zero;
+                    outlineObj.transform.localRotation = Quaternion.identity;
+                    outlineObj.transform.localScale = Vector3.one * 1.025f;
+
+                    MeshFilter outMf = outlineObj.AddComponent<MeshFilter>();
+                    outMf.sharedMesh = srcMesh;
+
+                    MeshRenderer outMr = outlineObj.AddComponent<MeshRenderer>();
+                    outMr.sharedMaterials = whiteMats;
+                    outMr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                    outMr.receiveShadows = false;
+
+                    _outlineRingTransforms.Add(outlineObj.transform);
+                    _outlineSourceTransforms.Add(mf.transform);
+                    _outlineScreenDirs.Add(dir);
+                }
+            }
+
+            AttachWhiteParticleTrail();
+        }
+
+        private void AttachWhiteParticleTrail()
+        {
+            if (_bonusTrailPs != null) return;
+
+            GameObject trailObj = new GameObject("BonusWhiteParticleTrail");
+            trailObj.transform.SetParent(transform, false);
+            trailObj.transform.localPosition = new Vector3(0f, 0f, 0.25f);
+
+            ParticleSystem ps = trailObj.AddComponent<ParticleSystem>();
+            var main = ps.main;
+            main.loop = true;
+            main.startLifetime = new ParticleSystem.MinMaxCurve(0.28f, 0.48f);
+            main.startSpeed = new ParticleSystem.MinMaxCurve(0.25f, 0.85f);
+            main.startSize = new ParticleSystem.MinMaxCurve(0.07f, 0.16f);
+            main.startColor = new ParticleSystem.MinMaxGradient(
+                new Color(1.0f, 1.0f, 1.0f, 0.82f),
+                new Color(0.92f, 0.96f, 1.0f, 0.45f)
+            );
+            main.gravityModifier = 0.08f;
+            main.simulationSpace = ParticleSystemSimulationSpace.World;
+            main.maxParticles = 60;
+
+            var emission = ps.emission;
+            emission.rateOverTime = 8f;
+            emission.rateOverDistance = 3.2f;
+
+            var shape = ps.shape;
+            shape.shapeType = ParticleSystemShapeType.Sphere;
+            shape.radius = 0.24f;
+
+            var sizeOverLifetime = ps.sizeOverLifetime;
+            sizeOverLifetime.enabled = true;
+            sizeOverLifetime.size = new ParticleSystem.MinMaxCurve(1f, AnimationCurve.Linear(0f, 1f, 1f, 0f));
+
+            AssignParticleMaterial(trailObj, new Color(1.0f, 1.0f, 1.0f, 0.85f));
+            ps.Play();
+            _bonusTrailPs = ps;
         }
     }
 }

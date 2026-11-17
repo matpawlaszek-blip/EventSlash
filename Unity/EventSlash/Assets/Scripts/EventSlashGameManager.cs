@@ -928,7 +928,7 @@ namespace EventSlash
             bool canSpawnPom = _activePomegranate == null &&
                                pomegranateDefinition != null &&
                                pomegranateDefinition.wholePrefab != null &&
-                               (_wavesSinceLastPomegranate >= 18 || (_wavesSinceLastPomegranate >= 10 && UnityEngine.Random.value < 0.10f));
+                               (_wavesSinceLastPomegranate >= 26 || (_wavesSinceLastPomegranate >= 15 && UnityEngine.Random.value < 0.06f));
             if (canSpawnPom)
             {
                 _wavesSinceLastPomegranate = 0;
@@ -977,6 +977,12 @@ namespace EventSlash
             {
                 _activePomegranate = item;
             }
+            else if (!isBomb && UnityEngine.Random.value < 0.12f)
+            {
+                // Occasionally spawn a bonus fruit with a bold 2D white outline that awards 3x points!
+                item.scorePoints = 3;
+                item.Apply2DWhiteOutline(0.07f);
+            }
         }
 
         public void OnFruitSliced(FruitItem fruit, Vector3 worldPos)
@@ -1013,6 +1019,16 @@ namespace EventSlash
                     new Color(1.0f, 0.38f, 0.16f),
                     new Color(1.0f, 0.90f, 0.20f),
                     1.25f
+                );
+            }
+            else if (fruit.isBonusOutlined)
+            {
+                ShowNinjaCallout(
+                    IsEnglish ? "BONUS FRUIT!" : "BONUSOWY OWOC!",
+                    $"+{gained}   {GetLocalizedFruitName(fruit.fruitName)}",
+                    Color.white,
+                    new Color(1.0f, 0.92f, 0.25f),
+                    1.05f
                 );
             }
             else
