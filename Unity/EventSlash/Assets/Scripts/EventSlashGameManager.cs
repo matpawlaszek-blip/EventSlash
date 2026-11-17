@@ -215,7 +215,7 @@ namespace EventSlash
                 cam.sensitivity = Mathf.Clamp(PlayerPrefs.GetFloat("EventSlash_Sensitivity", EventCameraManager.DefaultSensitivity), 0.4f, 2.0f);
                 cam.minHandSpeed = Mathf.Clamp(PlayerPrefs.GetFloat("EventSlash_MinHandSpeed", EventCameraManager.DefaultMinHandSpeed), 80f, 320f);
                 cam.minHandThickness = Mathf.Clamp(PlayerPrefs.GetFloat("EventSlash_MinHandThickness", EventCameraManager.DefaultMinHandThickness), 140f, 480f);
-                cam.maxHands = Mathf.Clamp(PlayerPrefs.GetInt("EventSlash_MaxHands", EventCameraManager.DefaultMaxHands), 1, 2);
+                cam.maxHands = Mathf.Clamp(PlayerPrefs.GetInt("EventSlash_MaxHands", EventCameraManager.DefaultMaxHands), 0, 2);
                 cam.swayFilterEnabled = PlayerPrefs.GetInt("EventSlash_SwayFilter", EventCameraManager.DefaultSwayFilterEnabled ? 1 : 0) == 1;
                 cam.denoiseEnabled = PlayerPrefs.GetInt("EventSlash_DenoiseEnabled", EventCameraManager.DefaultDenoiseEnabled ? 1 : 0) == 1;
             }
@@ -1080,8 +1080,11 @@ namespace EventSlash
         public void ToggleMaxHands()
         {
             if (EventCameraManager.Instance == null) return;
-            EventCameraManager.Instance.maxHands = EventCameraManager.Instance.maxHands >= 2 ? 1 : 2;
-            PlayerPrefs.SetInt("EventSlash_MaxHands", EventCameraManager.Instance.maxHands);
+            int cur = EventCameraManager.Instance.maxHands;
+            // Cycle: 1 hand -> 2 hands -> 0 (no limit) -> 1 hand
+            int next = cur == 1 ? 2 : (cur == 2 ? 0 : 1);
+            EventCameraManager.Instance.maxHands = next;
+            PlayerPrefs.SetInt("EventSlash_MaxHands", next);
             UpdateMaxHandsToggleUI();
         }
 
@@ -1092,15 +1095,21 @@ namespace EventSlash
             {
                 if (IsEnglish)
                 {
-                    maxHandsToggleText.text = mh >= 2
-                        ? "MAX HANDS: <color=#65FF45>2 HANDS</color>"
-                        : "MAX HANDS: <color=#FFD245>1 HAND</color>";
+                    if (mh == 1)
+                        maxHandsToggleText.text = "MAX HANDS: <color=#FFD245>1 HAND</color>";
+                    else if (mh == 2)
+                        maxHandsToggleText.text = "MAX HANDS: <color=#65FF45>2 HANDS</color>";
+                    else
+                        maxHandsToggleText.text = "MAX HANDS: <color=#45E6FF>NO LIMIT</color>";
                 }
                 else
                 {
-                    maxHandsToggleText.text = mh >= 2
-                        ? "MAKS. DŁONIE: <color=#65FF45>2 DŁONIE</color>"
-                        : "MAKS. DŁONIE: <color=#FFD245>1 DŁOŃ</color>";
+                    if (mh == 1)
+                        maxHandsToggleText.text = "MAKS. DŁONIE: <color=#FFD245>1 DŁOŃ</color>";
+                    else if (mh == 2)
+                        maxHandsToggleText.text = "MAKS. DŁONIE: <color=#65FF45>2 DŁONIE</color>";
+                    else
+                        maxHandsToggleText.text = "MAKS. DŁONIE: <color=#45E6FF>BEZ LIMITU</color>";
                 }
             }
         }

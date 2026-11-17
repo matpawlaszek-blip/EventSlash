@@ -46,7 +46,8 @@ namespace EventSlash
         public float minHandSpeed = DefaultMinHandSpeed;
         [Range(140f, 480f)]
         public float minHandThickness = DefaultMinHandThickness;
-        [Range(1, 2)]
+        [Tooltip("1 = 1 hand, 2 = 2 hands, 0 = Unlimited hands")]
+        [Range(0, 2)]
         public int maxHands = DefaultMaxHands;
         public bool swayFilterEnabled = DefaultSwayFilterEnabled;
         public bool denoiseEnabled = DefaultDenoiseEnabled;
@@ -421,7 +422,7 @@ namespace EventSlash
                 : $"raw_recordings/{activeRawFileName}";
             int denoiseArg = denoiseEnabled ? 1 : 0;
             int swayArg = swayFilterEnabled ? 1 : 0;
-            int maxHandsArg = Mathf.Clamp(maxHands, 1, 2);
+            int maxHandsArg = Mathf.Clamp(maxHands, 0, 2);
             string minSpeedArg = minHandSpeed.ToString("F1", CultureInfo.InvariantCulture);
             string minThickArg = minHandThickness.ToString("F1", CultureInfo.InvariantCulture);
 

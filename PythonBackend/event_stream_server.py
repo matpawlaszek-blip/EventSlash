@@ -84,7 +84,7 @@ class MetavisionHandTracker:
         self.denoise = bool(denoise)
         self.min_speed = float(np.clip(min_speed, 50.0, 450.0))
         self.min_thickness = float(np.clip(min_thickness, 100.0, 600.0))
-        self.max_hands = int(np.clip(max_hands, 1, 2))
+        self.max_hands = 0 if int(max_hands) <= 0 else int(max_hands)
         self.sway_filter = bool(sway_filter)
 
         self.gh = height // 8
@@ -307,57 +307,67 @@ class MetavisionHandTracker:
                 if int(sm.sum()) < 8:
                     continue
 
-                # Select the single strongest hand hotspot in this arm component
                 score_map = np.where(sm, thick5 * np.sqrt(fast5 + 1.0), 0.0)
-                by, bx = np.unravel_index(np.argmax(score_map), score_map.shape)
-                d_val = float(dense5[by, bx])
-                th_val = float(thick5[by, bx])
-                f_val = float(fast5[by, bx])
+                max_peaks = 1 if self.max_hands in (1, 2) else max(1, (cw * 8) // 130)
 
-                # Strict hand verification: dense 2D core + fast optical flow
-                if d_val < req_dense or th_val < req_thick or f_val < req_fast:
-                    continue
+                for _ in range(max_peaks):
+                    by, bx = np.unravel_index(np.argmax(score_map), score_map.shape)
+                    if score_map[by, bx] <= 0.0:
+                        break
 
-                mvx = float(vx5[by, bx]) / max(f_val, 1.0)
-                mvy = float(vy5[by, bx]) / max(f_val, 1.0)
-                mspd = float(np.hypot(mvx, mvy))
-                if mspd < self.min_speed:
-                    continue
+                    # Suppress 130px (16-cell) radius around this peak so next iteration finds a different hand
+                    if max_peaks > 1:
+                        yy, xx = np.ogrid[:gh, :gw]
+                        score_map[(yy - by) ** 2 + (xx - bx) ** 2 <= 16 ** 2] = 0.0
 
-                px = (bx + 0.5) * 8.0
-                py = (by + 0.5) * 8.0
+                    d_val = float(dense5[by, bx])
+                    th_val = float(thick5[by, bx])
+                    f_val = float(fast5[by, bx])
 
-                if self.sway_filter:
-                    # Suppress chest/torso interior unless extreme hand activity is right in front of the chest
-                    if has_upright_torso and torso_col_mask[by, bx]:
-                        if th_val < 650.0 or f_val < 240.0 or d_val < 19.0:
-                            continue
-
-                    # Suppress lower-hip/waist edge when lowering arms at bottom of screen
-                    if py >= h * 0.885 and (th_val < 600.0 or f_val < 220.0):
+                    # Strict hand verification: dense 2D core + fast optical flow
+                    if d_val < req_dense or th_val < req_thick or f_val < req_fast:
                         continue
 
-                    # Suppress head region (top-center above chest/neck silhouette)
-                    if py <= h * 0.325 and abs(px - self.torso_x_center) <= 95.0:
-                        below_sil = int(
-                            sil_mask[
-                                min(gh - 1, by + 4) : min(gh, by + 22),
-                                max(0, bx - 6) : min(gw, bx + 7),
-                            ].sum()
-                        )
-                        if below_sil >= 18 and (th_val < 900.0 or f_val < 500.0):
+                    mvx = float(vx5[by, bx]) / max(f_val, 1.0)
+                    mvy = float(vy5[by, bx]) / max(f_val, 1.0)
+                    mspd = float(np.hypot(mvx, mvy))
+                    if mspd < self.min_speed:
+                        continue
+
+                    px = (bx + 0.5) * 8.0
+                    py = (by + 0.5) * 8.0
+
+                    if self.sway_filter:
+                        # Suppress chest/torso interior unless extreme hand activity is right in front of the chest
+                        if has_upright_torso and torso_col_mask[by, bx]:
+                            if th_val < 650.0 or f_val < 240.0 or d_val < 19.0:
+                                continue
+
+                        # Suppress lower-hip/waist edge when lowering arms at bottom of screen
+                        if py >= h * 0.885 and (th_val < 600.0 or f_val < 220.0):
                             continue
 
-                # Mirror horizontally (u -> 1 - u, vu -> -vu) to match the mirrored video feed
-                u = float(np.clip(1.0 - (px / w), 0.0, 1.0))
-                v = float(np.clip(1.0 - (py / h), 0.0, 1.0))
-                vu = float(-mvx / w)
-                vv = float(-mvy / h)
-                intensity = float(min(1.0, (th_val / 600.0) * (mspd / 200.0)))
-                score = th_val * np.sqrt(f_val) * (mspd / 200.0)
-                candidates.append((score, px, py, u, v, vu, vv, intensity))
+                        # Suppress head region (top-center above chest/neck silhouette)
+                        if py <= h * 0.325 and abs(px - self.torso_x_center) <= 95.0:
+                            below_sil = int(
+                                sil_mask[
+                                    min(gh - 1, by + 4) : min(gh, by + 22),
+                                    max(0, bx - 6) : min(gw, bx + 7),
+                                ].sum()
+                            )
+                            if below_sil >= 18 and (th_val < 900.0 or f_val < 500.0):
+                                continue
 
-        # 8. Non-maximum suppression: at most max_hands, minimum 130 px apart
+                    # Mirror horizontally (u -> 1 - u, vu -> -vu) to match the mirrored video feed
+                    u = float(np.clip(1.0 - (px / w), 0.0, 1.0))
+                    v = float(np.clip(1.0 - (py / h), 0.0, 1.0))
+                    vu = float(-mvx / w)
+                    vv = float(-mvy / h)
+                    intensity = float(min(1.0, (th_val / 600.0) * (mspd / 200.0)))
+                    score = th_val * np.sqrt(f_val) * (mspd / 200.0)
+                    candidates.append((score, px, py, u, v, vu, vv, intensity))
+
+        # 8. Non-maximum suppression: at most max_hands (0 = unlimited), minimum 130 px apart
         candidates.sort(key=lambda item: item[0], reverse=True)
         selected = []
         for cand in candidates:
@@ -365,7 +375,7 @@ class MetavisionHandTracker:
             if any(np.hypot(px - sx, py - sy) < 130.0 for sx, sy, *_ in selected):
                 continue
             selected.append((px, py, u, v, vu, vv, intensity))
-            if len(selected) >= self.max_hands:
+            if self.max_hands > 0 and len(selected) >= self.max_hands:
                 break
 
         # Sort selected hands left-to-right (by u) so 2-hand trail assignment stays consistent
@@ -473,7 +483,7 @@ def main():
     parser.add_argument("--denoise", type=int, default=1, help="1 to filter isolated noise pixels from frame, 0 for raw")
     parser.add_argument("--min-speed", type=float, default=155.0, help="Minimum hand speed in px/s required to register")
     parser.add_argument("--min-thickness", type=float, default=260.0, help="Minimum 2D hand thickness score required")
-    parser.add_argument("--max-hands", type=int, default=2, help="Maximum simultaneous hands tracked (1 or 2)")
+    parser.add_argument("--max-hands", type=int, default=2, help="Maximum simultaneous hands tracked (1, 2, or 0 for unlimited)")
     parser.add_argument("--sway-filter", type=int, default=1, help="1 to suppress full-body sway & torso/head, 0 to disable")
     parser.add_argument("--once", action="store_true", help="Exit after first client disconnects")
     args = parser.parse_args()

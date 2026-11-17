@@ -5,8 +5,8 @@ namespace EventSlash
 {
     /// <summary>
     /// Renders visual blade/hand markers and trails over the event camera view
-    /// corresponding to the detected active hand motion clusters (up to 2 hands + mouse fallback).
-    /// Matches each detected hand to its nearest active trail so single/dual hand transitions stay smooth.
+    /// corresponding to the detected active hand motion clusters (1 hand, 2 hands, or unlimited hands + mouse fallback).
+    /// Matches each detected hand to its nearest active trail so single/multi-hand transitions stay smooth.
     /// </summary>
     public class SlashTrailVisualizer : MonoBehaviour
     {
@@ -17,18 +17,25 @@ namespace EventSlash
 
         private readonly List<TrailRenderer> _trails = new List<TrailRenderer>();
         private readonly List<SlashCluster> _clusters = new List<SlashCluster>();
+        private Shader _trailShader;
 
         private void Start()
         {
             if (targetCamera == null) targetCamera = Camera.main;
 
-            Shader trailShader = Shader.Find("Sprites/Default");
-            if (trailShader == null) trailShader = Shader.Find("Universal Render Pipeline/Unlit");
+            _trailShader = Shader.Find("Sprites/Default");
+            if (_trailShader == null) _trailShader = Shader.Find("Universal Render Pipeline/Unlit");
 
-            int trailCount = Mathf.Max(2, maxTrails);
-            for (int i = 0; i < trailCount; i++)
+            int initialTrailCount = Mathf.Max(2, maxTrails);
+            EnsureTrailCapacity(initialTrailCount);
+        }
+
+        private void EnsureTrailCapacity(int requiredCount)
+        {
+            while (_trails.Count < requiredCount)
             {
-                GameObject tObj = new GameObject($"HandBladeTrail_{i}");
+                int idx = _trails.Count;
+                GameObject tObj = new GameObject($"HandBladeTrail_{idx}");
                 tObj.transform.SetParent(transform, false);
 
                 TrailRenderer tr = tObj.AddComponent<TrailRenderer>();
@@ -40,9 +47,9 @@ namespace EventSlash
                 tr.numCornerVertices = 4;
                 tr.emitting = false;
 
-                if (trailShader != null)
+                if (_trailShader != null)
                 {
-                    Material mat = new Material(trailShader);
+                    Material mat = new Material(_trailShader);
                     mat.color = trailColor;
                     if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", trailColor);
                     tr.material = mat;
@@ -74,7 +81,7 @@ namespace EventSlash
             EventCameraManager.Instance.GetActiveClusters(_clusters);
             float distFromCam = Mathf.Abs(planeZ - targetCamera.transform.position.z);
 
-            int clusterCount = Mathf.Min(_clusters.Count, _trails.Count);
+            int clusterCount = _clusters.Count;
             if (clusterCount == 0)
             {
                 for (int i = 0; i < _trails.Count; i++)
@@ -83,6 +90,8 @@ namespace EventSlash
                 }
                 return;
             }
+
+            EnsureTrailCapacity(clusterCount);
 
             Vector3[] targetPositions = new Vector3[clusterCount];
             for (int c = 0; c < clusterCount; c++)
