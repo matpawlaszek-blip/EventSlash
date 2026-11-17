@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
@@ -187,6 +188,8 @@ namespace EventSlash
         private float _targetCamTilt;
         private float _camShakeTimer;
         private float _camShakeIntensity;
+        private static Sprite _pomegranateSplashSprite;
+        private GameObject _activeScreenSplashObj;
 
         public bool IsEnglish => languageIndex == 0;
 
@@ -1095,6 +1098,7 @@ namespace EventSlash
             _camShakeIntensity = 0.52f;
 
             Vector3 origin = pom != null ? pom.transform.position : Vector3.zero;
+            SpawnPomegranateScreenSplash(origin);
 
             // Slice every active fruit on screen and make all active bombs disappear!
             FruitItem[] allItems = FindObjectsByType<FruitItem>(FindObjectsSortMode.None);
@@ -1250,6 +1254,217 @@ namespace EventSlash
             {
                 if (h != null) Destroy(h.gameObject);
             }
+
+            if (_activeScreenSplashObj != null)
+            {
+                Destroy(_activeScreenSplashObj);
+                _activeScreenSplashObj = null;
+            }
+        }
+
+        private void SpawnPomegranateScreenSplash(Vector3 worldOrigin)
+        {
+            if (hudPanel == null) return;
+
+            if (_activeScreenSplashObj != null)
+            {
+                Destroy(_activeScreenSplashObj);
+            }
+
+            Sprite splashSprite = GetOrCreatePomegranateSplashSprite();
+
+            GameObject container = new GameObject("PomegranateScreenSplash");
+            container.transform.SetParent(hudPanel.transform, false);
+            container.transform.SetAsFirstSibling();
+
+            RectTransform rt = container.AddComponent<RectTransform>();
+            rt.anchorMin = Vector2.zero;
+            rt.anchorMax = Vector2.one;
+            rt.offsetMin = Vector2.zero;
+            rt.offsetMax = Vector2.zero;
+
+            CanvasGroup cg = container.AddComponent<CanvasGroup>();
+            cg.alpha = 0f;
+            cg.interactable = false;
+            cg.blocksRaycasts = false;
+
+            // Convert world explosion origin into reference 1920x1080 canvas coordinates
+            Camera cam = Camera.main;
+            float aspect = cam != null ? cam.aspect : (16f / 9f);
+            float normX = Mathf.Clamp(worldOrigin.x / (10.0f * aspect), -0.35f, 0.35f);
+            float normY = Mathf.Clamp(worldOrigin.y / 10.0f, -0.30f, 0.30f);
+            Vector2 centerAnchored = new Vector2(normX * 1920f, normY * 1080f);
+
+            // 1. Central large semi-transparent ruby juice splatter
+            CreateSplashBlotch(
+                container.transform,
+                splashSprite,
+                centerAnchored,
+                new Vector2(1050f, 1050f),
+                UnityEngine.Random.Range(0f, 360f),
+                new Color(0.88f, 0.04f, 0.16f, 0.52f)
+            );
+
+            // 2. Surrounding smaller splashes across the screen
+            Vector2[] offsets =
+            {
+                new Vector2(-460f, 240f),
+                new Vector2(480f, 210f),
+                new Vector2(-420f, -250f),
+                new Vector2(440f, -230f)
+            };
+            for (int i = 0; i < offsets.Length; i++)
+            {
+                Vector2 pos = centerAnchored * 0.5f + offsets[i] + new Vector2(UnityEngine.Random.Range(-70f, 70f), UnityEngine.Random.Range(-55f, 55f));
+                float sz = UnityEngine.Random.Range(420f, 620f);
+                CreateSplashBlotch(
+                    container.transform,
+                    splashSprite,
+                    pos,
+                    new Vector2(sz, sz),
+                    UnityEngine.Random.Range(0f, 360f),
+                    new Color(0.92f, 0.06f, 0.18f, 0.44f)
+                );
+            }
+
+            _activeScreenSplashObj = container;
+            StartCoroutine(AnimateScreenSplashCoroutine(cg, container));
+        }
+
+        private static void CreateSplashBlotch(Transform parent, Sprite sprite, Vector2 anchoredPos, Vector2 size, float rotDeg, Color col)
+        {
+            GameObject go = new GameObject("SplashBlotch");
+            go.transform.SetParent(parent, false);
+            RectTransform rt = go.AddComponent<RectTransform>();
+            rt.anchorMin = new Vector2(0.5f, 0.5f);
+            rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.anchoredPosition = anchoredPos;
+            rt.sizeDelta = size;
+            rt.localRotation = Quaternion.Euler(0f, 0f, rotDeg);
+
+            Image img = go.AddComponent<Image>();
+            img.sprite = sprite;
+            img.color = col;
+            img.raycastTarget = false;
+        }
+
+        private IEnumerator AnimateScreenSplashCoroutine(CanvasGroup cg, GameObject splashObj)
+        {
+            // Fast pop-in (0.07s)
+            float t = 0f;
+            while (t < 0.07f)
+            {
+                if (cg == null) yield break;
+                t += Time.unscaledDeltaTime;
+                cg.alpha = Mathf.Clamp01(t / 0.07f);
+                yield return null;
+            }
+            if (cg != null) cg.alpha = 1.0f;
+
+            // Hold on screen for 1.0 second
+            float hold = 0f;
+            while (hold < 1.0f)
+            {
+                if (cg == null) yield break;
+                hold += Time.unscaledDeltaTime;
+                yield return null;
+            }
+
+            // Smoothly fade out over 0.75s
+            float fade = 0f;
+            const float fadeDuration = 0.75f;
+            while (fade < fadeDuration)
+            {
+                if (cg == null) yield break;
+                fade += Time.unscaledDeltaTime;
+                cg.alpha = 1.0f - Mathf.Clamp01(fade / fadeDuration);
+                yield return null;
+            }
+
+            if (splashObj != null)
+            {
+                if (_activeScreenSplashObj == splashObj)
+                    _activeScreenSplashObj = null;
+                Destroy(splashObj);
+            }
+        }
+
+        private static Sprite GetOrCreatePomegranateSplashSprite()
+        {
+            if (_pomegranateSplashSprite != null)
+                return _pomegranateSplashSprite;
+
+            const int size = 256;
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false)
+            {
+                wrapMode = TextureWrapMode.Clamp,
+                filterMode = FilterMode.Bilinear
+            };
+
+            Color[] cols = new Color[size * size];
+
+            // Precompute satellite droplet positions around the main splatter
+            Vector2[] droplets =
+            {
+                new Vector2(0.58f, 0.24f), new Vector2(-0.62f, 0.28f),
+                new Vector2(0.48f, -0.52f), new Vector2(-0.54f, -0.46f),
+                new Vector2(0.18f, 0.68f), new Vector2(-0.22f, -0.66f),
+                new Vector2(0.72f, -0.12f), new Vector2(-0.74f, -0.08f),
+                new Vector2(0.36f, 0.56f), new Vector2(-0.42f, 0.54f)
+            };
+            float[] dropletRadii = { 0.11f, 0.09f, 0.10f, 0.12f, 0.08f, 0.09f, 0.07f, 0.08f, 0.06f, 0.07f };
+
+            for (int y = 0; y < size; y++)
+            {
+                float ny = (y / (float)(size - 1)) * 2f - 1f;
+                for (int x = 0; x < size; x++)
+                {
+                    float nx = (x / (float)(size - 1)) * 2f - 1f;
+                    float r = Mathf.Sqrt(nx * nx + ny * ny);
+                    float ang = Mathf.Atan2(ny, nx);
+
+                    // First design with gentler, less-spikey radial waves + smooth Perlin noise modulation
+                    float rays = Mathf.Sin(ang * 5f) * 0.055f
+                               + Mathf.Cos(ang * 8f + 1.1f) * 0.040f
+                               + Mathf.Sin(ang * 13f + 2.4f) * 0.022f;
+                    float noise = Mathf.PerlinNoise(nx * 2.8f + 4.1f, ny * 2.8f + 7.3f) * 0.26f;
+                    float maxR = 0.42f + rays + noise;
+
+                    float alpha = 0f;
+                    if (r < maxR)
+                    {
+                        float edgeSoft = Mathf.Clamp01((maxR - r) / 0.08f);
+                        float rimBoost = Mathf.Lerp(0.72f, 1.0f, Mathf.Clamp01(r / Mathf.Max(0.01f, maxR)));
+                        alpha = edgeSoft * rimBoost;
+                    }
+
+                    // Add satellite droplets
+                    Vector2 p = new Vector2(nx, ny);
+                    for (int d = 0; d < droplets.Length; d++)
+                    {
+                        float dist = Vector2.Distance(p, droplets[d]);
+                        if (dist < dropletRadii[d])
+                        {
+                            float dAlpha = Mathf.Clamp01((dropletRadii[d] - dist) / 0.03f);
+                            alpha = Mathf.Max(alpha, dAlpha * 0.92f);
+                        }
+                    }
+
+                    cols[y * size + x] = new Color(1f, 1f, 1f, Mathf.Clamp01(alpha));
+                }
+            }
+
+            tex.SetPixels(cols);
+            tex.Apply();
+
+            _pomegranateSplashSprite = Sprite.Create(
+                tex,
+                new Rect(0, 0, size, size),
+                new Vector2(0.5f, 0.5f),
+                100f
+            );
+            return _pomegranateSplashSprite;
         }
 
         // ==================== GENERAL TAB HANDLERS ====================
