@@ -84,9 +84,13 @@ namespace EventSlash
             transform.Rotate(angularVelocity * dt, Space.Self);
 
             Vector2 quadVp = GetNormalizedQuadCoords(transform.position);
-            if (quadVp.y > 0.06f && quadVp.x > 0.04f && quadVp.x < 0.96f)
+            if (!_hasEnteredScreen && quadVp.y > 0.06f && quadVp.x > 0.04f && quadVp.x < 0.96f)
             {
                 _hasEnteredScreen = true;
+                if (EventSlashGameManager.Instance != null)
+                {
+                    EventSlashGameManager.Instance.PlayObjectThrownSfx();
+                }
             }
 
             // Check hand slash detection while item is visible on screen

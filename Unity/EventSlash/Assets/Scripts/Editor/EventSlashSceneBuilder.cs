@@ -1030,14 +1030,30 @@ namespace EventSlash.Editor
                 null, Color.clear, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero, false);
 
             Text languageLabelTxt = CreateNinjaText(generalTabPanel.transform, "LanguageLabelText",
-                "JĘZYK:", ninjaImpact, 30, FontStyle.Normal,
+                "JĘZYK:", ninjaImpact, 28, FontStyle.Normal,
                 new Color(1.0f, 0.96f, 0.84f), new Color(0.16f, 0.06f, 0.02f),
-                new Vector2(0f, 75f), new Vector2(560f, 44f), 2.8f);
+                new Vector2(0f, 128f), new Vector2(560f, 40f), 2.8f);
 
             Dropdown languageDropdown = CreateDropdown(generalTabPanel.transform, "LanguageDropdown",
                 sprites.GetValueOrDefault("WoodBanner"), ninjaImpact,
-                new Vector2(0f, 5f), new Vector2(380f, 60f),
+                new Vector2(0f, 70f), new Vector2(380f, 56f),
                 new List<string> { "English", "Polski" }, 1);
+
+            Text musicVolLabel = CreateNinjaText(generalTabPanel.transform, "MusicVolumeValueText",
+                "GŁOŚNOŚĆ MUZYKI: 80%", ninjaImpact, 25, FontStyle.Normal,
+                new Color(1.0f, 0.96f, 0.84f), new Color(0.16f, 0.06f, 0.02f),
+                new Vector2(0f, -6f), new Vector2(760f, 36f), 2.8f);
+            Slider musicVolSlider = CreateSlider(generalTabPanel.transform, "MusicVolumeSlider",
+                new Vector2(0f, -42f), new Vector2(600f, 30f), 0f, 1f, 0.80f, false);
+
+            Text sfxVolLabel = CreateNinjaText(generalTabPanel.transform, "SfxVolumeValueText",
+                "EFEKTY DŹWIĘKOWE: 100%", ninjaImpact, 25, FontStyle.Normal,
+                new Color(1.0f, 0.96f, 0.84f), new Color(0.16f, 0.06f, 0.02f),
+                new Vector2(0f, -96f), new Vector2(760f, 36f), 2.8f);
+            Slider sfxVolSlider = CreateSlider(generalTabPanel.transform, "SfxVolumeSlider",
+                new Vector2(0f, -132f), new Vector2(600f, 30f), 0f, 1f, 1.00f, false);
+
+            languageDropdown.transform.SetAsLastSibling();
 
             // --- TAB 2: TRACKING ---
             GameObject trackingTabPanel = CreateImagePanel(settingsBoard.transform, "TrackingTabPanel",
@@ -1266,6 +1282,14 @@ namespace EventSlash.Editor
 
             gameMgr.languageLabelText = languageLabelTxt;
             gameMgr.languageDropdown = languageDropdown;
+            gameMgr.musicVolumeSlider = musicVolSlider;
+            gameMgr.musicVolumeValueText = musicVolLabel;
+            gameMgr.sfxVolumeSlider = sfxVolSlider;
+            gameMgr.sfxVolumeValueText = sfxVolLabel;
+            gameMgr.menuMusicClip = AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/Audio/Music/local_forecast.wav");
+            gameMgr.lossCricketsClip = AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/Audio/SFX/crickets.wav");
+            gameMgr.fruitSlicedClip = AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/Audio/SFX/fruit_sliced.wav");
+            gameMgr.objectThrownClip = AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/Audio/SFX/object_thrown.wav");
 
             gameMgr.minHandSpeedSlider = minSpeedSlider;
             gameMgr.minHandSpeedValueText = minSpeedLabel;

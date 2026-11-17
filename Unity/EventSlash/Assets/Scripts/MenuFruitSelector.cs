@@ -326,6 +326,11 @@ namespace EventSlash
                 moverB.angularVelocity = new Vector3(-120f, 210f, -180f);
             }
 
+            if (EventSlashGameManager.Instance != null)
+            {
+                EventSlashGameManager.Instance.PlayFruitSlicedSfx();
+            }
+
             SpawnMenuSliceSplash(spawnPos);
             StartCoroutine(AnimateRingAndInvokeCoroutine());
         }

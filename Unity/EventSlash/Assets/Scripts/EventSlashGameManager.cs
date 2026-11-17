@@ -42,6 +42,8 @@ namespace EventSlash
         public static EventSlashGameManager Instance { get; private set; }
 
         public const int DefaultLanguageIndex = 1; // 0 = English, 1 = Polski
+        public const float DefaultMusicVolume = 0.80f;
+        public const float DefaultSfxVolume = 1.00f;
         public const bool DefaultBombsEnabled = true;
         public const float DefaultBombSpawnChance = 0.18f;
         public const float DefaultSpawnRateMultiplier = 1.0f;
@@ -49,9 +51,17 @@ namespace EventSlash
         public const int DefaultMaxLives = 3;
         public const bool DefaultLivesEnabled = true;
 
-        [Header("General Settings")]
+        [Header("General & Audio Settings")]
         [Tooltip("0 = English, 1 = Polski")]
         public int languageIndex = DefaultLanguageIndex;
+        [Range(0f, 1f)]
+        public float musicVolume = DefaultMusicVolume;
+        [Range(0f, 1f)]
+        public float sfxVolume = DefaultSfxVolume;
+        public AudioClip menuMusicClip;
+        public AudioClip lossCricketsClip;
+        public AudioClip fruitSlicedClip;
+        public AudioClip objectThrownClip;
 
         [Header("Fruit Prefabs (Whole + Sliced Halves)")]
         public List<FruitDefinition> fruitTypes = new List<FruitDefinition>();
@@ -127,6 +137,10 @@ namespace EventSlash
         [Header("General Tab UI Elements")]
         public Text languageLabelText;
         public Dropdown languageDropdown;
+        public Slider musicVolumeSlider;
+        public Text musicVolumeValueText;
+        public Slider sfxVolumeSlider;
+        public Text sfxVolumeValueText;
 
         [Header("Tracking Tab UI Elements")]
         public Slider minHandSpeedSlider;
@@ -198,6 +212,9 @@ namespace EventSlash
         private GameObject _activeScreenSplashObj;
         private RectTransform _logoRootRect;
         private Image _logoKatanaBeamImg;
+        private AudioSource _musicSource;
+        private AudioSource _sfxSource;
+        private AudioSource _thrownSfxSource;
 
         public bool IsEnglish => languageIndex == 0;
 
@@ -222,6 +239,7 @@ namespace EventSlash
             EnsureStrawberryInFruitPool();
             EnsurePomegranateDefinitionReady();
             EnsureDragonfruitDefinitionReady();
+            EnsureAudioReady();
             EnsureUIWired();
             SyncAllSettingsUI();
             SelectSettingsTab(SettingsTab.General);
@@ -232,6 +250,8 @@ namespace EventSlash
         {
             bestScore = PlayerPrefs.GetInt("EventSlash_BestScore", 0);
             languageIndex = Mathf.Clamp(PlayerPrefs.GetInt("EventSlash_Language", DefaultLanguageIndex), 0, 1);
+            musicVolume = Mathf.Clamp01(PlayerPrefs.GetFloat("EventSlash_MusicVolume", DefaultMusicVolume));
+            sfxVolume = Mathf.Clamp01(PlayerPrefs.GetFloat("EventSlash_SfxVolume", DefaultSfxVolume));
 
             // Game tab settings
             bombsEnabled = PlayerPrefs.GetInt("EventSlash_BombsEnabled", DefaultBombsEnabled ? 1 : 0) == 1;
@@ -260,7 +280,11 @@ namespace EventSlash
             {
                 case SettingsTab.General:
                     languageIndex = DefaultLanguageIndex;
+                    musicVolume = DefaultMusicVolume;
+                    sfxVolume = DefaultSfxVolume;
                     PlayerPrefs.SetInt("EventSlash_Language", languageIndex);
+                    PlayerPrefs.SetFloat("EventSlash_MusicVolume", musicVolume);
+                    PlayerPrefs.SetFloat("EventSlash_SfxVolume", sfxVolume);
                     break;
 
                 case SettingsTab.Tracking:
@@ -389,6 +413,12 @@ namespace EventSlash
                 languageDropdown.SetValueWithoutNotify(Mathf.Clamp(languageIndex, 0, 1));
                 languageDropdown.RefreshShownValue();
             }
+
+            if (musicVolumeSlider != null) musicVolumeSlider.SetValueWithoutNotify(musicVolume);
+            OnMusicVolumeChanged(musicVolume);
+
+            if (sfxVolumeSlider != null) sfxVolumeSlider.SetValueWithoutNotify(sfxVolume);
+            OnSfxVolumeChanged(sfxVolume);
 
             if (settingsTitleText != null)
             {
@@ -842,6 +872,8 @@ namespace EventSlash
                 );
                 rawModeSelector.Initialize(StartTestRawRecordingGame);
             }
+
+            StartMenuMusic();
         }
 
         public void StartLiveCameraGame()
@@ -898,6 +930,7 @@ namespace EventSlash
 
         private void StartGameplay(EventStreamMode mode)
         {
+            StopMenuMusic();
             ResetTimeAndCameraImmediate();
             ClearActiveFruits();
             HideComboBannerImmediate();
@@ -1083,6 +1116,8 @@ namespace EventSlash
         {
             if (currentState != GameState.Playing) return;
 
+            PlayFruitSlicedSfx();
+
             float now = Time.time;
             if (now - _lastSliceTime <= 0.48f)
             {
@@ -1152,6 +1187,8 @@ namespace EventSlash
         public void OnPomegranateSliced(FruitItem pom, int sliceCount, Vector2 slashDir)
         {
             if (currentState != GameState.Playing) return;
+
+            PlayFruitSlicedSfx();
 
             _activePomegranate = pom;
             _targetTimeScale = 0.25f;
@@ -1272,6 +1309,8 @@ namespace EventSlash
         private void TriggerGameOver(string titleReason = "KONIEC GRY")
         {
             currentState = GameState.GameOver;
+            StopMenuMusic();
+            PlayLossCricketsSfx();
             ResetTimeAndCameraImmediate();
             ClearActiveFruits();
             HideComboBannerImmediate();
@@ -1568,7 +1607,7 @@ namespace EventSlash
             return _pomegranateSplashSprite;
         }
 
-        // ==================== GENERAL TAB HANDLERS ====================
+        // ==================== GENERAL TAB & AUDIO HANDLERS ====================
 
         public void OnLanguageChanged(int index)
         {
@@ -1576,6 +1615,144 @@ namespace EventSlash
             PlayerPrefs.SetInt("EventSlash_Language", languageIndex);
             PlayerPrefs.Save();
             SyncAllSettingsUI();
+        }
+
+        public void OnMusicVolumeChanged(float val)
+        {
+            musicVolume = Mathf.Clamp01(val);
+            PlayerPrefs.SetFloat("EventSlash_MusicVolume", musicVolume);
+            if (_musicSource != null)
+            {
+                _musicSource.volume = musicVolume;
+            }
+            if (musicVolumeValueText != null)
+            {
+                int pct = Mathf.RoundToInt(musicVolume * 100f);
+                musicVolumeValueText.text = IsEnglish
+                    ? $"MUSIC VOLUME: {pct}%"
+                    : $"GŁOŚNOŚĆ MUZYKI: {pct}%";
+            }
+        }
+
+        public void OnSfxVolumeChanged(float val)
+        {
+            sfxVolume = Mathf.Clamp01(val);
+            PlayerPrefs.SetFloat("EventSlash_SfxVolume", sfxVolume);
+            if (_sfxSource != null)
+            {
+                _sfxSource.volume = sfxVolume;
+            }
+            if (_thrownSfxSource != null)
+            {
+                _thrownSfxSource.volume = sfxVolume * 0.85f;
+            }
+            if (sfxVolumeValueText != null)
+            {
+                int pct = Mathf.RoundToInt(sfxVolume * 100f);
+                sfxVolumeValueText.text = IsEnglish
+                    ? $"SFX VOLUME: {pct}%"
+                    : $"EFEKTY DŹWIĘKOWE: {pct}%";
+            }
+        }
+
+        private void EnsureAudioReady()
+        {
+#if UNITY_EDITOR
+            if (menuMusicClip == null)
+                menuMusicClip = UnityEditor.AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/Audio/Music/local_forecast.wav");
+            if (lossCricketsClip == null)
+                lossCricketsClip = UnityEditor.AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/Audio/SFX/crickets.wav");
+            if (fruitSlicedClip == null)
+                fruitSlicedClip = UnityEditor.AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/Audio/SFX/fruit_sliced.wav");
+            if (objectThrownClip == null)
+                objectThrownClip = UnityEditor.AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/Audio/SFX/object_thrown.wav");
+#endif
+
+            if (_musicSource == null)
+            {
+                GameObject musicObj = new GameObject("MenuMusicAudioSource");
+                musicObj.transform.SetParent(transform, false);
+                _musicSource = musicObj.AddComponent<AudioSource>();
+                _musicSource.playOnAwake = false;
+                _musicSource.loop = true;
+                _musicSource.spatialBlend = 0f;
+                _musicSource.volume = musicVolume;
+            }
+
+            if (_sfxSource == null)
+            {
+                GameObject sfxObj = new GameObject("SfxAudioSource");
+                sfxObj.transform.SetParent(transform, false);
+                _sfxSource = sfxObj.AddComponent<AudioSource>();
+                _sfxSource.playOnAwake = false;
+                _sfxSource.loop = false;
+                _sfxSource.spatialBlend = 0f;
+                _sfxSource.volume = sfxVolume;
+            }
+
+            if (_thrownSfxSource == null)
+            {
+                GameObject thrownObj = new GameObject("ThrownObjectSfxAudioSource");
+                thrownObj.transform.SetParent(transform, false);
+                _thrownSfxSource = thrownObj.AddComponent<AudioSource>();
+                _thrownSfxSource.playOnAwake = false;
+                _thrownSfxSource.loop = false;
+                _thrownSfxSource.spatialBlend = 0f;
+                _thrownSfxSource.volume = sfxVolume * 0.85f;
+            }
+        }
+
+        public void StartMenuMusic()
+        {
+            EnsureAudioReady();
+            if (_musicSource == null || menuMusicClip == null) return;
+            _musicSource.volume = musicVolume;
+            if (_musicSource.clip != menuMusicClip)
+            {
+                _musicSource.clip = menuMusicClip;
+            }
+            if (!_musicSource.isPlaying)
+            {
+                _musicSource.Play();
+            }
+        }
+
+        public void StopMenuMusic()
+        {
+            if (_musicSource != null && _musicSource.isPlaying)
+            {
+                _musicSource.Stop();
+            }
+        }
+
+        public void PlayLossCricketsSfx()
+        {
+            EnsureAudioReady();
+            if (_sfxSource != null && lossCricketsClip != null && sfxVolume > 0.001f)
+            {
+                _sfxSource.PlayOneShot(lossCricketsClip, sfxVolume);
+            }
+        }
+
+        public void PlayFruitSlicedSfx()
+        {
+            EnsureAudioReady();
+            if (_sfxSource != null && fruitSlicedClip != null && sfxVolume > 0.001f)
+            {
+                _sfxSource.PlayOneShot(fruitSlicedClip, sfxVolume);
+            }
+        }
+
+        public void PlayObjectThrownSfx()
+        {
+            EnsureAudioReady();
+            if (_thrownSfxSource != null && objectThrownClip != null && sfxVolume > 0.001f)
+            {
+                _thrownSfxSource.Stop();
+                _thrownSfxSource.clip = objectThrownClip;
+                _thrownSfxSource.volume = sfxVolume * 0.85f;
+                _thrownSfxSource.Play();
+            }
         }
 
         // ==================== TRACKING TAB HANDLERS ====================
@@ -1843,12 +2020,13 @@ namespace EventSlash
 #endif
             }
 
-            // Automatically upgrade SettingsDojoBoard if the scene doesn't have the 3-tab layout (General + Tracking + Game) yet
+            // Automatically upgrade SettingsDojoBoard if the scene doesn't have the 3-tab layout (General + Tracking + Game) or Audio sliders yet
             if (settingsPopupPanel != null)
             {
                 Transform existingGeneral = settingsPopupPanel.transform.Find("SettingsDojoBoard/GeneralTabPanel");
+                Transform existingMusicSlider = settingsPopupPanel.transform.Find("SettingsDojoBoard/GeneralTabPanel/MusicVolumeSlider");
                 Transform existingLivesCheckbox = settingsPopupPanel.transform.Find("SettingsDojoBoard/GameTabPanel/Btn_ToggleLives");
-                if (existingGeneral == null || existingLivesCheckbox == null)
+                if (existingGeneral == null || existingMusicSlider == null || existingLivesCheckbox == null)
                 {
                     RebuildTabbedSettingsPopupRuntime();
                 }
@@ -1889,6 +2067,8 @@ namespace EventSlash
             {
                 switch (s.name)
                 {
+                    case "MusicVolumeSlider": musicVolumeSlider = s; break;
+                    case "SfxVolumeSlider": sfxVolumeSlider = s; break;
                     case "MinHandSpeedSlider": minHandSpeedSlider = s; break;
                     case "MinHandThicknessSlider": minHandThicknessSlider = s; break;
                     case "SensitivitySlider": sensitivitySlider = s; break;
@@ -1915,6 +2095,8 @@ namespace EventSlash
                 {
                     case "SettingsTitle": settingsTitleText = t; break;
                     case "LanguageLabelText": languageLabelText = t; break;
+                    case "MusicVolumeValueText": musicVolumeValueText = t; break;
+                    case "SfxVolumeValueText": sfxVolumeValueText = t; break;
                     case "MinHandSpeedValueText": minHandSpeedValueText = t; break;
                     case "MinHandThicknessValueText": minHandThicknessValueText = t; break;
                     case "SensitivityValueText": sensitivityValueText = t; break;
@@ -1997,6 +2179,8 @@ namespace EventSlash
             {
                 minHandSpeedSlider.maxValue = 800f;
             }
+            WireSlider(musicVolumeSlider, OnMusicVolumeChanged);
+            WireSlider(sfxVolumeSlider, OnSfxVolumeChanged);
             WireSlider(minHandSpeedSlider, OnMinHandSpeedChanged);
             WireSlider(minHandThicknessSlider, OnMinHandThicknessChanged);
             WireSlider(sensitivitySlider, OnSensitivityChanged);
@@ -2061,12 +2245,27 @@ namespace EventSlash
             generalTabPanel = CreateRuntimeContainer(board, "GeneralTabPanel");
 
             languageLabelText = CreateRuntimeText(generalTabPanel.transform, "LanguageLabelText",
-                "JĘZYK:", font, 30,
-                new Color(1.0f, 0.96f, 0.84f), new Vector2(0f, 75f), new Vector2(560f, 44f));
+                "JĘZYK:", font, 28,
+                new Color(1.0f, 0.96f, 0.84f), new Vector2(0f, 128f), new Vector2(560f, 40f));
 
             languageDropdown = CreateRuntimeDropdown(generalTabPanel.transform, "LanguageDropdown",
-                bannerSprite, font, new Vector2(0f, 5f), new Vector2(380f, 60f),
+                bannerSprite, font, new Vector2(0f, 70f), new Vector2(380f, 56f),
                 new List<string> { "English", "Polski" }, languageIndex);
+
+            musicVolumeValueText = CreateRuntimeText(generalTabPanel.transform, "MusicVolumeValueText",
+                "GŁOŚNOŚĆ MUZYKI: 80%", font, 25,
+                new Color(1.0f, 0.96f, 0.84f), new Vector2(0f, -6f), new Vector2(760f, 36f));
+            musicVolumeSlider = CreateRuntimeSlider(generalTabPanel.transform, "MusicVolumeSlider",
+                new Vector2(0f, -42f), new Vector2(600f, 30f), 0f, 1f, musicVolume, false);
+
+            sfxVolumeValueText = CreateRuntimeText(generalTabPanel.transform, "SfxVolumeValueText",
+                "EFEKTY DŹWIĘKOWE: 100%", font, 25,
+                new Color(1.0f, 0.96f, 0.84f), new Vector2(0f, -96f), new Vector2(760f, 36f));
+            sfxVolumeSlider = CreateRuntimeSlider(generalTabPanel.transform, "SfxVolumeSlider",
+                new Vector2(0f, -132f), new Vector2(600f, 30f), 0f, 1f, sfxVolume, false);
+
+            // Keep dropdown last in sibling order so its popup list renders above the audio sliders
+            languageDropdown.transform.SetAsLastSibling();
 
             // --- TAB 2: TRACKING ---
             trackingTabPanel = CreateRuntimeContainer(board, "TrackingTabPanel");
