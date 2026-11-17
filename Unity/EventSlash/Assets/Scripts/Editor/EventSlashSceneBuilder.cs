@@ -635,7 +635,10 @@ namespace EventSlash.Editor
                 { "Mat_Pomegranate_Aril", (new Color(0.92f, 0.04f, 0.14f), 0.86f) },
                 { "Mat_Strawberry_Skin", (new Color(0.90f, 0.06f, 0.12f), 0.72f) },
                 { "Mat_Strawberry_Flesh", (new Color(0.90f, 0.06f, 0.12f), 0.65f) },
-                { "Mat_Strawberry_Seed", (new Color(0.96f, 0.82f, 0.22f), 0.65f) }
+                { "Mat_Strawberry_Seed", (new Color(0.96f, 0.82f, 0.22f), 0.65f) },
+                { "Mat_Dragonfruit_Skin", (new Color(0.94f, 0.07f, 0.40f), 0.68f) },
+                { "Mat_Dragonfruit_ScaleTip", (new Color(0.38f, 0.84f, 0.14f), 0.58f) },
+                { "Mat_Dragonfruit_Flesh", (new Color(0.97f, 0.97f, 0.98f), 0.55f) }
             };
 
             var created = new Dictionary<string, Material>();
@@ -667,6 +670,7 @@ namespace EventSlash.Editor
                 "Orange_Whole", "Orange_Half_A", "Orange_Half_B",
                 "Banana_Whole", "Banana_Half_A", "Banana_Half_B",
                 "Strawberry_Whole", "Strawberry_Half_A", "Strawberry_Half_B",
+                "Dragonfruit_Whole", "Dragonfruit_Half_A", "Dragonfruit_Half_B",
                 "Bomb_Whole", "Bomb_Half_A", "Bomb_Half_B",
                 "Pomegranate_Whole", "Pomegranate_Half_A", "Pomegranate_Half_B", "Pomegranate_Piece"
             };
@@ -849,6 +853,16 @@ namespace EventSlash.Editor
                 piecePrefab = prefabs.GetValueOrDefault("Pomegranate_Piece"),
                 juiceColor = new Color(0.92f, 0.06f, 0.18f),
                 scale = 1.48f
+            };
+
+            gameMgr.dragonfruitDefinition = new FruitDefinition
+            {
+                name = "Smoczy Owoc",
+                wholePrefab = prefabs.GetValueOrDefault("Dragonfruit_Whole"),
+                halfAPrefab = prefabs.GetValueOrDefault("Dragonfruit_Half_A"),
+                halfBPrefab = prefabs.GetValueOrDefault("Dragonfruit_Half_B"),
+                juiceColor = new Color(0.95f, 0.12f, 0.48f),
+                scale = 1.42f
             };
 
             SlashTrailVisualizer trailVis = controllerObj.AddComponent<SlashTrailVisualizer>();

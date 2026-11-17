@@ -65,6 +65,9 @@ namespace EventSlash
         [Header("Pomegranate Prefab (Multi-Slice Frenzy)")]
         public FruitDefinition pomegranateDefinition;
 
+        [Header("Dragonfruit Prefab (Very Rare Side-Launched Golden Bonus)")]
+        public FruitDefinition dragonfruitDefinition;
+
         [Header("Gameplay Spawning Settings")]
         public float spawnIntervalMin = 1.15f;
         public float spawnIntervalMax = 2.10f;
@@ -173,6 +176,7 @@ namespace EventSlash
         private float _scorePopTimer;
         private int _wavesSinceLastBomb;
         private int _wavesSinceLastPomegranate;
+        private int _wavesSinceLastDragonfruit;
         private bool _lastGameOverWasBomb;
 
         // Pomegranate Frenzy camera & slow-motion state
@@ -217,6 +221,7 @@ namespace EventSlash
             }
             EnsureStrawberryInFruitPool();
             EnsurePomegranateDefinitionReady();
+            EnsureDragonfruitDefinitionReady();
             EnsureUIWired();
             SyncAllSettingsUI();
             SelectSettingsTab(SettingsTab.General);
@@ -328,6 +333,9 @@ namespace EventSlash
                     case "TRUSKAWKA":
                     case "STRAWBERRY":
                         return "STRAWBERRY";
+                    case "SMOCZY OWOC":
+                    case "DRAGONFRUIT":
+                        return "DRAGONFRUIT";
                     case "GRANAT":
                     case "POMEGRANATE":
                         return "POMEGRANATE";
@@ -359,6 +367,9 @@ namespace EventSlash
                     case "STRAWBERRY":
                     case "TRUSKAWKA":
                         return "TRUSKAWKA";
+                    case "DRAGONFRUIT":
+                    case "SMOCZY OWOC":
+                        return "SMOCZY OWOC";
                     case "POMEGRANATE":
                     case "GRANAT":
                         return "GRANAT";
@@ -897,6 +908,7 @@ namespace EventSlash
             _scorePopTimer = 0f;
             _wavesSinceLastBomb = 0;
             _wavesSinceLastPomegranate = 0;
+            _wavesSinceLastDragonfruit = 0;
             _nextSpawnTimer = 0.85f;
             currentState = GameState.Playing;
 
@@ -961,6 +973,61 @@ namespace EventSlash
                 _wavesSinceLastPomegranate = 0;
                 SpawnSingleProjectile(pomegranateDefinition, false, true, halfWidth * 0.65f, 0.15f);
             }
+
+            // Very rarely spawn the golden Dragonfruit thrown horizontally from the left or right side!
+            _wavesSinceLastDragonfruit++;
+            bool canSpawnDragon = dragonfruitDefinition != null &&
+                                  dragonfruitDefinition.wholePrefab != null &&
+                                  (_wavesSinceLastDragonfruit >= 112 || (_wavesSinceLastDragonfruit >= 64 && UnityEngine.Random.value < 0.0125f));
+            if (canSpawnDragon)
+            {
+                _wavesSinceLastDragonfruit = 0;
+                SpawnDragonfruitFromSide(halfWidth);
+            }
+        }
+
+        private void SpawnDragonfruitFromSide(float halfWidth)
+        {
+            if (dragonfruitDefinition == null || dragonfruitDefinition.wholePrefab == null)
+                return;
+
+            float side = UnityEngine.Random.value < 0.5f ? -1.0f : 1.0f;
+            float spawnX = side * (halfWidth * 1.48f);
+            float sideY = UnityEngine.Random.Range(-0.8f, 1.85f);
+            Vector3 pos = new Vector3(spawnX, sideY, spawnZ - 0.18f);
+            Quaternion rot = UnityEngine.Random.rotation;
+
+            float sizeMult = Mathf.Clamp(fruitSizeMultiplier, 0.7f, 1.5f);
+            GameObject obj = Instantiate(dragonfruitDefinition.wholePrefab, pos, rot);
+            obj.SetActive(true);
+            obj.name = "Dragonfruit_Projectile";
+            obj.transform.localScale = Vector3.one * (dragonfruitDefinition.scale * sizeMult);
+
+            FruitItem item = obj.GetComponent<FruitItem>();
+            if (item == null) item = obj.AddComponent<FruitItem>();
+
+            item.fruitName = dragonfruitDefinition.name;
+            item.isBomb = false;
+            item.isPomegranate = false;
+            item.isDragonfruit = true;
+            item.scorePoints = 100;
+            item.halfAPrefab = dragonfruitDefinition.halfAPrefab;
+            item.halfBPrefab = dragonfruitDefinition.halfBPrefab;
+            item.juiceColor = dragonfruitDefinition.juiceColor;
+            item.viewportHitRadius = 0.095f * sizeMult;
+
+            // Thrown from the side across the screen with a graceful high-speed arc
+            item.gravity = -9.2f;
+            float vx = -side * UnityEngine.Random.Range(11.8f, 14.5f);
+            float vy = UnityEngine.Random.Range(4.6f, 6.4f);
+            item.velocity = new Vector3(vx, vy, 0f);
+            item.angularVelocity = new Vector3(
+                UnityEngine.Random.Range(-190f, 190f),
+                UnityEngine.Random.Range(-220f, 220f),
+                UnityEngine.Random.Range(-190f, 190f)
+            );
+
+            item.ApplyGoldenDragonfruitAura(0.088f);
         }
 
         private void SpawnSingleProjectile(FruitDefinition def, bool isBomb, bool isPomegranate, float halfWidth, float yOffset)
@@ -1006,8 +1073,8 @@ namespace EventSlash
             }
             else if (!isBomb && UnityEngine.Random.value < 0.12f)
             {
-                // Occasionally spawn a bonus fruit with a bold 2D white outline that awards 3x points!
-                item.scorePoints = 3;
+                // Occasionally spawn a bonus fruit with a bold 2D white outline that awards 5x points!
+                item.scorePoints = 5;
                 item.Apply2DWhiteOutline(0.07f);
             }
         }
@@ -1045,6 +1112,16 @@ namespace EventSlash
                     IsEnglish ? $"COMBO x{_comboCount}!   +{gained} PTS" : $"KOMBO x{_comboCount}!   +{gained} PKT",
                     new Color(1.0f, 0.38f, 0.16f),
                     new Color(1.0f, 0.90f, 0.20f),
+                    1.25f
+                );
+            }
+            else if (fruit.isDragonfruit)
+            {
+                ShowNinjaCallout(
+                    IsEnglish ? "RARE DRAGONFRUIT!" : "RZADKI SMOCZY OWOC!",
+                    $"+{gained}   {GetLocalizedFruitName(fruit.fruitName)}",
+                    new Color(1.0f, 0.84f, 0.14f),
+                    new Color(1.0f, 0.96f, 0.45f),
                     1.25f
                 );
             }
@@ -2579,6 +2656,100 @@ namespace EventSlash
             pomegranateDefinition.halfAPrefab = pieceObj;
             pomegranateDefinition.halfBPrefab = pieceObj;
             pomegranateDefinition.piecePrefab = pieceObj;
+        }
+
+        private void EnsureDragonfruitDefinitionReady()
+        {
+            if (dragonfruitDefinition != null && dragonfruitDefinition.wholePrefab != null)
+            {
+                return;
+            }
+
+            dragonfruitDefinition = new FruitDefinition
+            {
+                name = "Smoczy Owoc",
+                juiceColor = new Color(0.95f, 0.12f, 0.48f),
+                scale = 1.42f
+            };
+
+            Shader litShader = Shader.Find("Universal Render Pipeline/Lit");
+            if (litShader == null) litShader = Shader.Find("Standard");
+
+            Material skinMat = CreateLitMaterial(litShader, new Color(0.94f, 0.07f, 0.40f), 0.68f);
+            Material scaleTipMat = CreateLitMaterial(litShader, new Color(0.38f, 0.84f, 0.14f), 0.58f);
+            Material fleshMat = CreateLitMaterial(litShader, new Color(0.97f, 0.97f, 0.98f), 0.55f);
+            Material seedMat = CreateLitMaterial(litShader, new Color(0.05f, 0.05f, 0.05f), 0.80f);
+
+#if UNITY_EDITOR
+            GameObject wholePrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Fruits/Dragonfruit_Whole.prefab");
+            GameObject halfAPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Fruits/Dragonfruit_Half_A.prefab");
+            GameObject halfBPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Fruits/Dragonfruit_Half_B.prefab");
+            if (wholePrefab != null && halfAPrefab != null && halfBPrefab != null)
+            {
+                dragonfruitDefinition.wholePrefab = wholePrefab;
+                dragonfruitDefinition.halfAPrefab = halfAPrefab;
+                dragonfruitDefinition.halfBPrefab = halfBPrefab;
+                return;
+            }
+
+            GameObject wholeFbx = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Models/Fruits/Dragonfruit_Whole.fbx");
+            GameObject halfAFbx = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Models/Fruits/Dragonfruit_Half_A.fbx");
+            GameObject halfBFbx = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Models/Fruits/Dragonfruit_Half_B.fbx");
+            if (wholeFbx != null && halfAFbx != null && halfBFbx != null)
+            {
+                GameObject fbxHolder = new GameObject("DragonfruitFbxTemplates");
+                fbxHolder.transform.SetParent(transform, false);
+                fbxHolder.SetActive(false);
+
+                Dictionary<string, Material> dragonMatMap = new Dictionary<string, Material>
+                {
+                    { "Mat_Dragonfruit_Skin", skinMat },
+                    { "Mat_Dragonfruit_ScaleTip", scaleTipMat },
+                    { "Mat_Dragonfruit_Flesh", fleshMat },
+                    { "Mat_Seed_Black", seedMat }
+                };
+
+                GameObject wInst = Instantiate(wholeFbx, fbxHolder.transform);
+                wInst.name = "Dragonfruit_Whole";
+                ApplyMappedMaterials(wInst, dragonMatMap, new[] { skinMat, scaleTipMat });
+
+                GameObject aInst = Instantiate(halfAFbx, fbxHolder.transform);
+                aInst.name = "Dragonfruit_Half_A";
+                ApplyMappedMaterials(aInst, dragonMatMap, new[] { skinMat, scaleTipMat, fleshMat, seedMat });
+
+                GameObject bInst = Instantiate(halfBFbx, fbxHolder.transform);
+                bInst.name = "Dragonfruit_Half_B";
+                ApplyMappedMaterials(bInst, dragonMatMap, new[] { skinMat, scaleTipMat, fleshMat, seedMat });
+
+                dragonfruitDefinition.wholePrefab = wInst;
+                dragonfruitDefinition.halfAPrefab = aInst;
+                dragonfruitDefinition.halfBPrefab = bInst;
+                return;
+            }
+#endif
+
+            // Runtime procedural fallback
+            GameObject holder = new GameObject("DragonfruitRuntimeTemplates");
+            holder.transform.SetParent(transform, false);
+            holder.SetActive(false);
+
+            GameObject wholeFallback = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            wholeFallback.name = "Dragonfruit_Whole_Template";
+            wholeFallback.transform.SetParent(holder.transform, false);
+            wholeFallback.transform.localScale = new Vector3(0.95f, 1.25f, 0.95f);
+            Destroy(wholeFallback.GetComponent<Collider>());
+            wholeFallback.GetComponent<MeshRenderer>().sharedMaterial = skinMat;
+
+            GameObject halfFallback = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            halfFallback.name = "Dragonfruit_Half_Template";
+            halfFallback.transform.SetParent(holder.transform, false);
+            halfFallback.transform.localScale = new Vector3(0.48f, 1.22f, 0.92f);
+            Destroy(halfFallback.GetComponent<Collider>());
+            halfFallback.GetComponent<MeshRenderer>().sharedMaterial = fleshMat;
+
+            dragonfruitDefinition.wholePrefab = wholeFallback;
+            dragonfruitDefinition.halfAPrefab = halfFallback;
+            dragonfruitDefinition.halfBPrefab = halfFallback;
         }
 
         private static void ApplyMappedMaterials(GameObject inst, Dictionary<string, Material> matMap, Material[] fallbackOrder)

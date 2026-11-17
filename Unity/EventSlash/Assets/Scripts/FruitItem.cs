@@ -19,6 +19,7 @@ namespace EventSlash
         public string fruitName = "Fruit";
         public bool isBomb;
         public bool isPomegranate;
+        public bool isDragonfruit;
         public bool isBonusOutlined;
         public GameObject halfAPrefab;
         public GameObject halfBPrefab;
@@ -29,11 +30,13 @@ namespace EventSlash
         public int scorePoints = 1;
 
         private static Material _whiteOutlineMaterial;
+        private static Material _goldOutlineMaterial;
         private readonly List<Transform> _outlineRingTransforms = new List<Transform>();
         private readonly List<Transform> _outlineSourceTransforms = new List<Transform>();
         private readonly List<Vector2> _outlineScreenDirs = new List<Vector2>();
         private float _outlineWorldThickness = 0.07f;
         private ParticleSystem _bonusTrailPs;
+        private TrailRenderer _goldenRibbonTrail;
 
         [Header("Ballistics")]
         public Vector3 velocity;
@@ -81,7 +84,7 @@ namespace EventSlash
             transform.Rotate(angularVelocity * dt, Space.Self);
 
             Vector2 quadVp = GetNormalizedQuadCoords(transform.position);
-            if (quadVp.y > 0.06f)
+            if (quadVp.y > 0.06f && quadVp.x > 0.04f && quadVp.x < 0.96f)
             {
                 _hasEnteredScreen = true;
             }
@@ -96,17 +99,18 @@ namespace EventSlash
                 }
             }
 
-            // Check if item fell off the bottom of the screen without being sliced
-            if (_hasEnteredScreen && velocity.y < 0f && transform.position.y < missThresholdY)
+            // Check if item fell off the bottom or exited the far side of the screen without being sliced
+            bool exitedSide = _hasEnteredScreen && isDragonfruit && (quadVp.x < -0.15f || quadVp.x > 1.15f);
+            if (exitedSide || (_hasEnteredScreen && velocity.y < 0f && transform.position.y < missThresholdY))
             {
-                // Bombs and Pomegranates do not deduct a life when missed
-                if (!isBomb && !isPomegranate && EventSlashGameManager.Instance != null)
+                // Bombs, Pomegranates, and side-launched Dragonfruits do not deduct a life when missed
+                if (!isBomb && !isPomegranate && !isDragonfruit && EventSlashGameManager.Instance != null)
                 {
                     EventSlashGameManager.Instance.OnFruitMissed(this);
                 }
                 Destroy(gameObject);
             }
-            else if (!_hasEnteredScreen && transform.position.y < missThresholdY - 3.0f)
+            else if (!_hasEnteredScreen && (transform.position.y < missThresholdY - 3.0f || Mathf.Abs(transform.position.x) > 18.0f))
             {
                 Destroy(gameObject);
             }
@@ -114,11 +118,14 @@ namespace EventSlash
 
         private void LateUpdate()
         {
-            if (!isBonusOutlined || _outlineRingTransforms.Count == 0)
+            if ((!isBonusOutlined && !isDragonfruit) || _outlineRingTransforms.Count == 0)
                 return;
 
-            // Keep the 8 white silhouette copies offset in 2D screen (X, Y) and pushed behind the fruit in +Z
-            // so the 3D fruit always renders cleanly in front while a bold 2D white border surrounds its contour.
+            float pulseMult = isDragonfruit ? (1.0f + 0.18f * Mathf.Sin(Time.time * 10.0f)) : 1.0f;
+            float thickness = _outlineWorldThickness * pulseMult;
+
+            // Keep the 8 silhouette copies offset in 2D screen (X, Y) and pushed behind the fruit in +Z
+            // so the 3D fruit always renders cleanly in front while a bold 2D border surrounds its contour.
             for (int i = 0; i < _outlineRingTransforms.Count; i++)
             {
                 Transform outTr = _outlineRingTransforms[i];
@@ -127,8 +134,8 @@ namespace EventSlash
 
                 Vector2 dir = _outlineScreenDirs[i];
                 outTr.position = srcTr.position + new Vector3(
-                    dir.x * _outlineWorldThickness,
-                    dir.y * _outlineWorldThickness,
+                    dir.x * thickness,
+                    dir.y * thickness,
                     0.85f
                 );
                 outTr.rotation = srcTr.rotation;
@@ -296,6 +303,14 @@ namespace EventSlash
                 em.enabled = false;
                 Destroy(_bonusTrailPs.gameObject, 0.8f);
                 _bonusTrailPs = null;
+            }
+
+            if (_goldenRibbonTrail != null)
+            {
+                _goldenRibbonTrail.transform.SetParent(null, true);
+                _goldenRibbonTrail.emitting = false;
+                Destroy(_goldenRibbonTrail.gameObject, 0.8f);
+                _goldenRibbonTrail = null;
             }
 
             Destroy(gameObject);
@@ -721,6 +736,171 @@ namespace EventSlash
             AssignParticleMaterial(trailObj, new Color(1.0f, 1.0f, 1.0f, 0.85f));
             ps.Play();
             _bonusTrailPs = ps;
+        }
+
+        /// <summary>
+        /// Applies a glowing golden 2D silhouette outline and a thick golden ribbon + sparkle particle trail
+        /// for the rare side-launched Dragonfruit.
+        /// </summary>
+        public void ApplyGoldenDragonfruitAura(float outlineThickness = 0.088f)
+        {
+            isDragonfruit = true;
+            isBonusOutlined = true;
+            _outlineWorldThickness = outlineThickness;
+
+            if (_goldOutlineMaterial == null)
+            {
+                Shader unlitShader = Shader.Find("Universal Render Pipeline/Unlit");
+                if (unlitShader == null) unlitShader = Shader.Find("Unlit/Color");
+                if (unlitShader == null) unlitShader = Shader.Find("Sprites/Default");
+
+                if (unlitShader != null)
+                {
+                    Color goldCol = new Color(1.00f, 0.84f, 0.14f, 1.0f);
+                    _goldOutlineMaterial = new Material(unlitShader);
+                    _goldOutlineMaterial.color = goldCol;
+                    if (_goldOutlineMaterial.HasProperty("_BaseColor"))
+                        _goldOutlineMaterial.SetColor("_BaseColor", goldCol);
+                }
+            }
+
+            if (_goldOutlineMaterial != null)
+            {
+                _outlineRingTransforms.Clear();
+                _outlineSourceTransforms.Clear();
+                _outlineScreenDirs.Clear();
+
+                MeshFilter[] filters = GetComponentsInChildren<MeshFilter>(true);
+                const int directions = 8;
+
+                foreach (MeshFilter mf in filters)
+                {
+                    if (mf == null || mf.sharedMesh == null || mf.gameObject.name.StartsWith("Outline2D_"))
+                        continue;
+
+                    Mesh srcMesh = mf.sharedMesh;
+                    int subCount = Mathf.Max(1, srcMesh.subMeshCount);
+                    Material[] goldMats = new Material[subCount];
+                    for (int s = 0; s < subCount; s++)
+                    {
+                        goldMats[s] = _goldOutlineMaterial;
+                    }
+
+                    for (int d = 0; d < directions; d++)
+                    {
+                        float ang = (d / (float)directions) * Mathf.PI * 2.0f;
+                        Vector2 dir = new Vector2(Mathf.Cos(ang), Mathf.Sin(ang));
+
+                        GameObject outlineObj = new GameObject($"Outline2D_Gold_{d}");
+                        outlineObj.transform.SetParent(mf.transform, false);
+                        outlineObj.transform.localPosition = Vector3.zero;
+                        outlineObj.transform.localRotation = Quaternion.identity;
+                        outlineObj.transform.localScale = Vector3.one * 1.035f;
+
+                        MeshFilter outMf = outlineObj.AddComponent<MeshFilter>();
+                        outMf.sharedMesh = srcMesh;
+
+                        MeshRenderer outMr = outlineObj.AddComponent<MeshRenderer>();
+                        outMr.sharedMaterials = goldMats;
+                        outMr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                        outMr.receiveShadows = false;
+
+                        _outlineRingTransforms.Add(outlineObj.transform);
+                        _outlineSourceTransforms.Add(mf.transform);
+                        _outlineScreenDirs.Add(dir);
+                    }
+                }
+            }
+
+            AttachThickGoldenTrail();
+        }
+
+        private void AttachThickGoldenTrail()
+        {
+            // 1. Thick glowing golden ribbon TrailRenderer
+            if (_goldenRibbonTrail == null)
+            {
+                GameObject ribbonObj = new GameObject("DragonfruitGoldenRibbonTrail");
+                ribbonObj.transform.SetParent(transform, false);
+                ribbonObj.transform.localPosition = new Vector3(0f, 0f, 0.35f);
+
+                TrailRenderer tr = ribbonObj.AddComponent<TrailRenderer>();
+                tr.time = 0.42f;
+                tr.minVertexDistance = 0.06f;
+                tr.startWidth = 0.56f;
+                tr.endWidth = 0.05f;
+                tr.numCapVertices = 5;
+                tr.numCornerVertices = 4;
+                tr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                tr.receiveShadows = false;
+
+                Shader trailShader = Shader.Find("Sprites/Default");
+                if (trailShader == null) trailShader = Shader.Find("Universal Render Pipeline/Unlit");
+                if (trailShader != null)
+                {
+                    Material mat = new Material(trailShader);
+                    Color gold = new Color(1.00f, 0.86f, 0.16f, 0.92f);
+                    mat.color = gold;
+                    if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", gold);
+                    tr.material = mat;
+                }
+
+                Gradient grad = new Gradient();
+                grad.SetKeys(
+                    new[]
+                    {
+                        new GradientColorKey(new Color(1.00f, 0.94f, 0.36f), 0.0f),
+                        new GradientColorKey(new Color(1.00f, 0.72f, 0.08f), 0.55f),
+                        new GradientColorKey(new Color(0.95f, 0.45f, 0.04f), 1.0f)
+                    },
+                    new[]
+                    {
+                        new GradientAlphaKey(0.88f, 0.0f),
+                        new GradientAlphaKey(0.55f, 0.55f),
+                        new GradientAlphaKey(0.0f, 1.0f)
+                    }
+                );
+                tr.colorGradient = grad;
+                _goldenRibbonTrail = tr;
+            }
+
+            // 2. Dense golden sparkle particle trail
+            if (_bonusTrailPs == null)
+            {
+                GameObject trailObj = new GameObject("DragonfruitGoldenParticleTrail");
+                trailObj.transform.SetParent(transform, false);
+                trailObj.transform.localPosition = new Vector3(0f, 0f, 0.28f);
+
+                ParticleSystem ps = trailObj.AddComponent<ParticleSystem>();
+                var main = ps.main;
+                main.loop = true;
+                main.startLifetime = new ParticleSystem.MinMaxCurve(0.35f, 0.65f);
+                main.startSpeed = new ParticleSystem.MinMaxCurve(0.45f, 1.65f);
+                main.startSize = new ParticleSystem.MinMaxCurve(0.14f, 0.30f);
+                main.startColor = new ParticleSystem.MinMaxGradient(
+                    new Color(1.00f, 0.94f, 0.32f, 0.95f),
+                    new Color(1.00f, 0.68f, 0.08f, 0.80f)
+                );
+                main.gravityModifier = 0.05f;
+                main.simulationSpace = ParticleSystemSimulationSpace.World;
+                main.maxParticles = 140;
+
+                var emission = ps.emission;
+                emission.rateOverTime = 26f;
+                emission.rateOverDistance = 7.5f;
+
+                var shape = ps.shape;
+                shape.shapeType = ParticleSystemShapeType.Sphere;
+                shape.radius = 0.34f;
+
+                var sizeOverLifetime = ps.sizeOverLifetime;
+                sizeOverLifetime.enabled = true;
+                sizeOverLifetime.size = new ParticleSystem.MinMaxCurve(1f, AnimationCurve.Linear(0f, 1f, 1f, 0f));
+
+                AssignParticleMaterial(trailObj, new Color(1.00f, 0.86f, 0.16f, 0.95f));
+                ps.Play();
+                _bonusTrailPs = ps;
+            }
         }
     }
 }
