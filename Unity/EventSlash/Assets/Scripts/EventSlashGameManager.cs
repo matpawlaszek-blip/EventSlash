@@ -189,7 +189,11 @@ namespace EventSlash
         private float _camShakeTimer;
         private float _camShakeIntensity;
         private static Sprite _pomegranateSplashSprite;
+        private static Sprite _katanaSlashBeamSprite;
+        private static Sprite _solidWhiteMaskSprite;
         private GameObject _activeScreenSplashObj;
+        private RectTransform _logoRootRect;
+        private Image _logoKatanaBeamImg;
 
         public bool IsEnglish => languageIndex == 0;
 
@@ -571,6 +575,19 @@ namespace EventSlash
 
             if (currentState == GameState.MainMenu)
             {
+                if (_logoRootRect != null)
+                {
+                    float t = Time.unscaledTime;
+                    float bobY = Mathf.Sin(t * 2.1f) * 4.5f;
+                    float tiltZ = 4.5f + Mathf.Sin(t * 1.4f) * 0.85f;
+                    _logoRootRect.anchoredPosition = new Vector2(-450f, 362f + bobY);
+                    _logoRootRect.localRotation = Quaternion.Euler(0f, 0f, tiltZ);
+                }
+                if (_logoKatanaBeamImg != null)
+                {
+                    float pulse = 0.88f + 0.12f * Mathf.Sin(Time.unscaledTime * 5.5f);
+                    _logoKatanaBeamImg.color = new Color(1f, 1f, 1f, pulse);
+                }
                 if (menuProfileBestText != null)
                 {
                     menuProfileBestText.text = IsEnglish
@@ -1753,6 +1770,8 @@ namespace EventSlash
                 }
             }
 
+            UpgradeMainMenuLogoRuntime();
+
             MenuFruitSelector[] selectors = FindObjectsByType<MenuFruitSelector>(FindObjectsInactive.Include, FindObjectsSortMode.None);
             foreach (MenuFruitSelector sel in selectors)
             {
@@ -2447,6 +2466,259 @@ namespace EventSlash
             if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", col);
             if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", smoothness);
             return m;
+        }
+
+        private void UpgradeMainMenuLogoRuntime()
+        {
+            if (menuPanel == null) return;
+            Transform logoTr = menuPanel.transform.Find("FruitNinjaStyleLogo");
+            if (logoTr == null) return;
+
+            _logoRootRect = logoTr.GetComponent<RectTransform>();
+            if (_logoRootRect != null)
+            {
+                _logoRootRect.anchoredPosition = new Vector2(-450f, 362f);
+                _logoRootRect.sizeDelta = new Vector2(960f, 240f);
+                _logoRootRect.localRotation = Quaternion.Euler(0f, 0f, 4.5f);
+            }
+
+            // Find existing font & sprites from the scene
+            Font font = null;
+            Text existingTxt = logoTr.GetComponentInChildren<Text>(true);
+            if (existingTxt != null) font = existingTxt.font;
+            if (font == null && menuProfileBestText != null) font = menuProfileBestText.font;
+            if (font == null) font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+
+            Sprite melonIconSprite = null;
+            if (hudPanel != null)
+            {
+                Transform melonTr = hudPanel.transform.Find("NinjaScoreWidget/WatermelonScoreIcon");
+                if (melonTr != null && melonTr.GetComponent<Image>() != null)
+                {
+                    melonIconSprite = melonTr.GetComponent<Image>().sprite;
+                }
+            }
+
+            for (int i = logoTr.childCount - 1; i >= 0; i--)
+            {
+                DestroyImmediate(logoTr.GetChild(i).gameObject);
+            }
+
+            Sprite splashSprite = GetOrCreatePomegranateSplashSprite();
+            Sprite katanaSprite = GetOrCreateKatanaSlashBeamSprite();
+            Sprite maskSprite = GetOrCreateSolidWhiteMaskSprite();
+
+            // 1. Subtle Fruit Juice Splatters behind the letters (no brown box!)
+            CreateLogoImage(logoTr, "JuiceSplash_Left", splashSprite,
+                new Color(0.95f, 0.12f, 0.22f, 0.72f), new Vector2(-215f, 12f), new Vector2(310f, 220f), 18f);
+            CreateLogoImage(logoTr, "JuiceSplash_Right", splashSprite,
+                new Color(1.00f, 0.50f, 0.06f, 0.68f), new Vector2(180f, -6f), new Vector2(320f, 220f), -28f);
+
+            // 2. Sliced Watermelon Emblem tucked behind the center-top of the logo
+            if (melonIconSprite != null)
+            {
+                CreateLogoImage(logoTr, "LogoWatermelonEmblem", melonIconSprite,
+                    Color.white, new Vector2(-12f, 48f), new Vector2(128f, 128f), -14f);
+            }
+
+            // 3. 3D Multi-Layered "EVENT" Typography (Deep Block Shadow + Fiery Orange Bevel + Sunburst Gold Face)
+            Vector2 eventPos = new Vector2(-205f, 8f);
+            Vector2 eventSize = new Vector2(490f, 165f);
+
+            Text evShadow = CreateLogoTextLayer(logoTr, "Logo_EVENT_BlockShadow", "EVENT", font, 118,
+                new Color(0.10f, 0.03f, 0.01f, 0.98f), eventPos + new Vector2(7f, -9f), eventSize, 3.0f, new Color(0.05f, 0.01f, 0f));
+            evShadow.rectTransform.localRotation = Quaternion.Euler(0f, 0f, 2.0f);
+
+            Text evBevel = CreateLogoTextLayer(logoTr, "Logo_EVENT_OrangeBevel", "EVENT", font, 118,
+                new Color(1.00f, 0.34f, 0.06f, 1.0f), eventPos + new Vector2(3.5f, -4.5f), eventSize, 3.5f, new Color(0.22f, 0.05f, 0.01f));
+            evBevel.rectTransform.localRotation = Quaternion.Euler(0f, 0f, 2.0f);
+
+            Text evMain = CreateLogoTextLayer(logoTr, "Logo_EVENT_GoldFace", "EVENT", font, 118,
+                new Color(1.00f, 0.90f, 0.18f, 1.0f), eventPos, eventSize, 4.2f, new Color(0.20f, 0.06f, 0.01f));
+            evMain.rectTransform.localRotation = Quaternion.Euler(0f, 0f, 2.0f);
+
+            // 4. Katana-Sliced "SLASH" Typography using Stencil Masks with a clean cut gap so halves never overlap
+            GameObject slashContainer = new GameObject("Logo_SLASH_SlicedContainer");
+            slashContainer.transform.SetParent(logoTr, false);
+            RectTransform slashRt = slashContainer.AddComponent<RectTransform>();
+            slashRt.anchorMin = new Vector2(0.5f, 0.5f);
+            slashRt.anchorMax = new Vector2(0.5f, 0.5f);
+            slashRt.pivot = new Vector2(0.5f, 0.5f);
+            slashRt.anchoredPosition = new Vector2(175f, 2f);
+            slashRt.sizeDelta = new Vector2(520f, 160f);
+            slashRt.localRotation = Quaternion.Euler(0f, 0f, -1.2f);
+
+            // Bottom Half Stencil Mask (0% .. 47% of 160px -> midpoint at y = -42.4px)
+            GameObject botMaskObj = CreateStencilSliceMask(slashContainer.transform, "Slash_BottomHalfMask",
+                maskSprite, new Vector2(0f, 0f), new Vector2(1f, 0.47f));
+
+            Vector2 botTextCenter = new Vector2(-5f, 40.4f);
+            CreateLogoTextLayer(botMaskObj.transform, "SlashBot_BlockShadow", "SLASH", font, 118,
+                new Color(0.03f, 0.07f, 0.16f, 0.98f), botTextCenter + new Vector2(6f, -8f), new Vector2(520f, 160f), 2.5f, new Color(0.01f, 0.03f, 0.08f));
+            CreateLogoTextLayer(botMaskObj.transform, "SlashBot_CyanBevel", "SLASH", font, 118,
+                new Color(0.10f, 0.68f, 1.00f, 1.0f), botTextCenter + new Vector2(3f, -4f), new Vector2(520f, 160f), 2.8f, new Color(0.04f, 0.12f, 0.24f));
+            CreateLogoTextLayer(botMaskObj.transform, "SlashBot_SteelFace", "SLASH", font, 118,
+                new Color(0.92f, 0.98f, 1.00f, 1.0f), botTextCenter, new Vector2(520f, 160f), 3.2f, new Color(0.05f, 0.12f, 0.22f));
+
+            // Top Half Stencil Mask (53% .. 100% of 160px -> midpoint at y = +42.4px), shifted right (+8px) along cut
+            GameObject topMaskObj = CreateStencilSliceMask(slashContainer.transform, "Slash_TopHalfMask",
+                maskSprite, new Vector2(0f, 0.53f), new Vector2(1f, 1f));
+
+            Vector2 topTextCenter = new Vector2(8f, -40.4f);
+            CreateLogoTextLayer(topMaskObj.transform, "SlashTop_BlockShadow", "SLASH", font, 118,
+                new Color(0.03f, 0.07f, 0.16f, 0.98f), topTextCenter + new Vector2(6f, -8f), new Vector2(520f, 160f), 2.5f, new Color(0.01f, 0.03f, 0.08f));
+            CreateLogoTextLayer(topMaskObj.transform, "SlashTop_CyanBevel", "SLASH", font, 118,
+                new Color(0.15f, 0.78f, 1.00f, 1.0f), topTextCenter + new Vector2(3f, -4f), new Vector2(520f, 160f), 2.8f, new Color(0.04f, 0.12f, 0.24f));
+            CreateLogoTextLayer(topMaskObj.transform, "SlashTop_SteelFace", "SLASH", font, 118,
+                new Color(1.00f, 1.00f, 1.00f, 1.0f), topTextCenter, new Vector2(520f, 160f), 3.2f, new Color(0.05f, 0.12f, 0.22f));
+
+            // 5. Crisp Glowing Katana Blade Streak passing cleanly through the gap between the top and bottom halves
+            _logoKatanaBeamImg = CreateLogoImage(slashContainer.transform, "KatanaSlashBeam", katanaSprite,
+                Color.white, new Vector2(0f, 0f), new Vector2(620f, 32f), 0f);
+        }
+
+        private static GameObject CreateStencilSliceMask(Transform parent, string name, Sprite maskSprite, Vector2 anchorMin, Vector2 anchorMax)
+        {
+            GameObject maskObj = new GameObject(name);
+            maskObj.transform.SetParent(parent, false);
+            RectTransform rt = maskObj.AddComponent<RectTransform>();
+            rt.anchorMin = anchorMin;
+            rt.anchorMax = anchorMax;
+            rt.offsetMin = Vector2.zero;
+            rt.offsetMax = Vector2.zero;
+
+            Image img = maskObj.AddComponent<Image>();
+            img.sprite = maskSprite;
+            img.color = Color.white;
+            img.raycastTarget = false;
+
+            Mask mask = maskObj.AddComponent<Mask>();
+            mask.showMaskGraphic = false;
+            return maskObj;
+        }
+
+        private static Sprite GetOrCreateSolidWhiteMaskSprite()
+        {
+            if (_solidWhiteMaskSprite != null)
+                return _solidWhiteMaskSprite;
+
+            Texture2D tex = new Texture2D(4, 4, TextureFormat.RGBA32, false);
+            Color[] cols = new Color[16];
+            for (int i = 0; i < 16; i++) cols[i] = Color.white;
+            tex.SetPixels(cols);
+            tex.Apply();
+
+            _solidWhiteMaskSprite = Sprite.Create(tex, new Rect(0, 0, 4, 4), new Vector2(0.5f, 0.5f), 100f);
+            return _solidWhiteMaskSprite;
+        }
+
+        private static Image CreateLogoImage(Transform parent, string name, Sprite sprite, Color col, Vector2 pos, Vector2 size, float rotZ)
+        {
+            GameObject go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            RectTransform rt = go.AddComponent<RectTransform>();
+            rt.anchorMin = new Vector2(0.5f, 0.5f);
+            rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.anchoredPosition = pos;
+            rt.sizeDelta = size;
+            rt.localRotation = Quaternion.Euler(0f, 0f, rotZ);
+
+            Image img = go.AddComponent<Image>();
+            img.sprite = sprite;
+            img.color = col;
+            img.raycastTarget = false;
+            return img;
+        }
+
+        private static Text CreateLogoTextLayer(Transform parent, string name, string content, Font font, int fontSize, Color col, Vector2 pos, Vector2 size, float outlineWidth, Color outlineCol)
+        {
+            GameObject txtObj = new GameObject(name);
+            txtObj.transform.SetParent(parent, false);
+            RectTransform rt = txtObj.AddComponent<RectTransform>();
+            rt.anchorMin = new Vector2(0.5f, 0.5f);
+            rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.anchoredPosition = pos;
+            rt.sizeDelta = size;
+
+            Text txt = txtObj.AddComponent<Text>();
+            txt.font = font;
+            txt.text = content;
+            txt.fontSize = fontSize;
+            txt.fontStyle = FontStyle.Italic;
+            txt.color = col;
+            txt.alignment = TextAnchor.MiddleCenter;
+            txt.horizontalOverflow = HorizontalWrapMode.Overflow;
+            txt.verticalOverflow = VerticalWrapMode.Overflow;
+            txt.raycastTarget = false;
+
+            Outline ol = txtObj.AddComponent<Outline>();
+            ol.effectColor = new Color(outlineCol.r, outlineCol.g, outlineCol.b, 0.96f);
+            ol.effectDistance = new Vector2(outlineWidth, -outlineWidth);
+            return txt;
+        }
+
+        private static Sprite GetOrCreateKatanaSlashBeamSprite()
+        {
+            if (_katanaSlashBeamSprite != null)
+                return _katanaSlashBeamSprite;
+
+            const int w = 512;
+            const int h = 64;
+            Texture2D tex = new Texture2D(w, h, TextureFormat.RGBA32, false)
+            {
+                wrapMode = TextureWrapMode.Clamp,
+                filterMode = FilterMode.Bilinear
+            };
+
+            Color[] cols = new Color[w * h];
+            for (int y = 0; y < h; y++)
+            {
+                float ny = (y / (float)(h - 1)) * 2f - 1f;
+                for (int x = 0; x < w; x++)
+                {
+                    float nx = (x / (float)(w - 1)) * 2f - 1f;
+
+                    // Taper thickness toward both tips (-1 and +1) like a razor-sharp katana arc
+                    float xEnv = Mathf.Pow(Mathf.Max(0f, 1.0f - nx * nx), 1.35f);
+                    float curveOffset = Mathf.Sin(nx * 2.2f) * 0.08f;
+                    float dy = Mathf.Abs(ny - curveOffset);
+
+                    float coreWidth = 0.13f * xEnv;
+                    float glowWidth = 0.68f * xEnv;
+
+                    // Bright cross-star glint near the impact point (nx ~ 0.18)
+                    float glintX = Mathf.Exp(-Mathf.Pow((nx - 0.18f) * 14f, 2f));
+                    glowWidth += glintX * 0.32f;
+
+                    Color c = Color.clear;
+                    if (dy < glowWidth && glowWidth > 0.001f)
+                    {
+                        float coreFactor = Mathf.Clamp01(1.0f - (dy / Mathf.Max(0.001f, coreWidth)));
+                        float glowFactor = Mathf.Pow(Mathf.Clamp01(1.0f - (dy / glowWidth)), 2.2f);
+
+                        Color cyanGlow = new Color(0.18f, 0.88f, 1.00f, 1.0f);
+                        Color whiteCore = new Color(1.00f, 1.00f, 1.00f, 1.0f);
+
+                        c = Color.Lerp(cyanGlow, whiteCore, Mathf.Clamp01(coreFactor + glintX * 0.65f));
+                        c.a = Mathf.Clamp01(glowFactor * 0.95f + coreFactor * 0.85f);
+                    }
+
+                    cols[y * w + x] = c;
+                }
+            }
+
+            tex.SetPixels(cols);
+            tex.Apply();
+
+            _katanaSlashBeamSprite = Sprite.Create(
+                tex,
+                new Rect(0, 0, w, h),
+                new Vector2(0.5f, 0.5f),
+                100f
+            );
+            return _katanaSlashBeamSprite;
         }
     }
 }
