@@ -42,7 +42,7 @@ namespace EventSlash
         public int tcpPort = 5055;
         [Range(0.4f, 2.0f)]
         public float sensitivity = DefaultSensitivity;
-        [Range(80f, 320f)]
+        [Range(80f, 800f)]
         public float minHandSpeed = DefaultMinHandSpeed;
         [Range(140f, 480f)]
         public float minHandThickness = DefaultMinHandThickness;

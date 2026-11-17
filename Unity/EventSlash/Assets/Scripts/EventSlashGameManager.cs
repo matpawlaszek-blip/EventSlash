@@ -215,6 +215,7 @@ namespace EventSlash
             {
                 _comboBaseAnchoredPos = comboBannerRect.anchoredPosition;
             }
+            EnsureStrawberryInFruitPool();
             EnsurePomegranateDefinitionReady();
             EnsureUIWired();
             SyncAllSettingsUI();
@@ -240,7 +241,7 @@ namespace EventSlash
             {
                 EventCameraManager cam = EventCameraManager.Instance;
                 cam.sensitivity = Mathf.Clamp(PlayerPrefs.GetFloat("EventSlash_Sensitivity", EventCameraManager.DefaultSensitivity), 0.4f, 2.0f);
-                cam.minHandSpeed = Mathf.Clamp(PlayerPrefs.GetFloat("EventSlash_MinHandSpeed", EventCameraManager.DefaultMinHandSpeed), 80f, 320f);
+                cam.minHandSpeed = Mathf.Clamp(PlayerPrefs.GetFloat("EventSlash_MinHandSpeed", EventCameraManager.DefaultMinHandSpeed), 80f, 800f);
                 cam.minHandThickness = Mathf.Clamp(PlayerPrefs.GetFloat("EventSlash_MinHandThickness", EventCameraManager.DefaultMinHandThickness), 140f, 480f);
                 cam.maxHands = Mathf.Clamp(PlayerPrefs.GetInt("EventSlash_MaxHands", EventCameraManager.DefaultMaxHands), 0, 2);
                 cam.swayFilterEnabled = PlayerPrefs.GetInt("EventSlash_SwayFilter", EventCameraManager.DefaultSwayFilterEnabled ? 1 : 0) == 1;
@@ -324,6 +325,9 @@ namespace EventSlash
                     case "BANAN":
                     case "BANANA":
                         return "BANANA";
+                    case "TRUSKAWKA":
+                    case "STRAWBERRY":
+                        return "STRAWBERRY";
                     case "GRANAT":
                     case "POMEGRANATE":
                         return "POMEGRANATE";
@@ -352,6 +356,9 @@ namespace EventSlash
                     case "BANANA":
                     case "BANAN":
                         return "BANAN";
+                    case "STRAWBERRY":
+                    case "TRUSKAWKA":
+                        return "TRUSKAWKA";
                     case "POMEGRANATE":
                     case "GRANAT":
                         return "GRANAT";
@@ -1498,7 +1505,7 @@ namespace EventSlash
 
         public void OnMinHandSpeedChanged(float val)
         {
-            float clamped = Mathf.Clamp(val, 80f, 320f);
+            float clamped = Mathf.Clamp(val, 80f, 800f);
             if (EventCameraManager.Instance != null)
             {
                 EventCameraManager.Instance.minHandSpeed = clamped;
@@ -1909,6 +1916,10 @@ namespace EventSlash
                 if (bombsToggleText == null) bombsToggleText = btnToggleBombs.GetComponentInChildren<Text>(true);
             }
 
+            if (minHandSpeedSlider != null)
+            {
+                minHandSpeedSlider.maxValue = 800f;
+            }
             WireSlider(minHandSpeedSlider, OnMinHandSpeedChanged);
             WireSlider(minHandThicknessSlider, OnMinHandThicknessChanged);
             WireSlider(sensitivitySlider, OnSensitivityChanged);
@@ -1987,7 +1998,7 @@ namespace EventSlash
                 "MIN. PRĘDKOŚĆ RUCHU DŁONI: 155 px/s", font, 25,
                 new Color(1.0f, 0.96f, 0.84f), new Vector2(0f, 132f), new Vector2(760f, 36f));
             minHandSpeedSlider = CreateRuntimeSlider(trackingTabPanel.transform, "MinHandSpeedSlider",
-                new Vector2(0f, 96f), new Vector2(600f, 30f), 80f, 320f, 155f, false);
+                new Vector2(0f, 96f), new Vector2(600f, 30f), 80f, 800f, 155f, false);
 
             minHandThicknessValueText = CreateRuntimeText(trackingTabPanel.transform, "MinHandThicknessValueText",
                 "GĘSTOŚĆ DETEKCJI DŁONI: 260", font, 25,
@@ -2313,6 +2324,113 @@ namespace EventSlash
             return slider;
         }
 
+        private void EnsureStrawberryInFruitPool()
+        {
+            if (fruitTypes == null)
+            {
+                fruitTypes = new List<FruitDefinition>();
+            }
+
+            foreach (FruitDefinition def in fruitTypes)
+            {
+                if (def != null && !string.IsNullOrEmpty(def.name))
+                {
+                    string n = def.name.Trim().ToUpperInvariant();
+                    if ((n == "TRUSKAWKA" || n == "STRAWBERRY") && def.wholePrefab != null)
+                        return;
+                }
+            }
+
+            FruitDefinition strawberryDef = new FruitDefinition
+            {
+                name = "Truskawka",
+                juiceColor = new Color(0.92f, 0.08f, 0.16f),
+                scale = 1.38f
+            };
+
+            Shader litShader = Shader.Find("Universal Render Pipeline/Lit");
+            if (litShader == null) litShader = Shader.Find("Standard");
+
+            Material skinMat = CreateLitMaterial(litShader, new Color(0.90f, 0.06f, 0.12f), 0.72f);
+            Material fleshMat = CreateLitMaterial(litShader, new Color(0.90f, 0.06f, 0.12f), 0.65f);
+            Material seedMat = CreateLitMaterial(litShader, new Color(0.96f, 0.82f, 0.22f), 0.65f);
+            Material leafMat = CreateLitMaterial(litShader, new Color(0.18f, 0.58f, 0.12f), 0.58f);
+
+#if UNITY_EDITOR
+            GameObject wholePrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Fruits/Strawberry_Whole.prefab");
+            GameObject halfAPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Fruits/Strawberry_Half_A.prefab");
+            GameObject halfBPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Fruits/Strawberry_Half_B.prefab");
+            if (wholePrefab != null && halfAPrefab != null && halfBPrefab != null)
+            {
+                strawberryDef.wholePrefab = wholePrefab;
+                strawberryDef.halfAPrefab = halfAPrefab;
+                strawberryDef.halfBPrefab = halfBPrefab;
+                fruitTypes.Add(strawberryDef);
+                return;
+            }
+
+            GameObject wholeFbx = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Models/Fruits/Strawberry_Whole.fbx");
+            GameObject halfAFbx = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Models/Fruits/Strawberry_Half_A.fbx");
+            GameObject halfBFbx = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Models/Fruits/Strawberry_Half_B.fbx");
+            if (wholeFbx != null && halfAFbx != null && halfBFbx != null)
+            {
+                GameObject fbxHolder = new GameObject("StrawberryFbxTemplates");
+                fbxHolder.transform.SetParent(transform, false);
+                fbxHolder.SetActive(false);
+
+                Dictionary<string, Material> strawMatMap = new Dictionary<string, Material>
+                {
+                    { "Mat_Strawberry_Skin", skinMat },
+                    { "Mat_Strawberry_Flesh", fleshMat },
+                    { "Mat_Strawberry_Seed", seedMat },
+                    { "Mat_Leaf_Green", leafMat }
+                };
+
+                GameObject wInst = Instantiate(wholeFbx, fbxHolder.transform);
+                wInst.name = "Strawberry_Whole";
+                ApplyMappedMaterials(wInst, strawMatMap, new[] { skinMat, seedMat, leafMat });
+
+                GameObject aInst = Instantiate(halfAFbx, fbxHolder.transform);
+                aInst.name = "Strawberry_Half_A";
+                ApplyMappedMaterials(aInst, strawMatMap, new[] { skinMat, fleshMat, seedMat, leafMat });
+
+                GameObject bInst = Instantiate(halfBFbx, fbxHolder.transform);
+                bInst.name = "Strawberry_Half_B";
+                ApplyMappedMaterials(bInst, strawMatMap, new[] { skinMat, fleshMat, seedMat, leafMat });
+
+                strawberryDef.wholePrefab = wInst;
+                strawberryDef.halfAPrefab = aInst;
+                strawberryDef.halfBPrefab = bInst;
+                fruitTypes.Add(strawberryDef);
+                return;
+            }
+#endif
+
+            // Runtime procedural fallback if FBX/Prefab is not present
+            GameObject holder = new GameObject("StrawberryRuntimeTemplates");
+            holder.transform.SetParent(transform, false);
+            holder.SetActive(false);
+
+            GameObject wholeFallback = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            wholeFallback.name = "Strawberry_Whole_Template";
+            wholeFallback.transform.SetParent(holder.transform, false);
+            wholeFallback.transform.localScale = new Vector3(0.95f, 1.15f, 0.95f);
+            Destroy(wholeFallback.GetComponent<Collider>());
+            wholeFallback.GetComponent<MeshRenderer>().sharedMaterial = skinMat;
+
+            GameObject halfFallback = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            halfFallback.name = "Strawberry_Half_Template";
+            halfFallback.transform.SetParent(holder.transform, false);
+            halfFallback.transform.localScale = new Vector3(0.48f, 1.12f, 0.92f);
+            Destroy(halfFallback.GetComponent<Collider>());
+            halfFallback.GetComponent<MeshRenderer>().sharedMaterial = skinMat;
+
+            strawberryDef.wholePrefab = wholeFallback;
+            strawberryDef.halfAPrefab = halfFallback;
+            strawberryDef.halfBPrefab = halfFallback;
+            fruitTypes.Add(strawberryDef);
+        }
+
         private void EnsurePomegranateDefinitionReady()
         {
             if (pomegranateDefinition != null && pomegranateDefinition.wholePrefab != null && pomegranateDefinition.piecePrefab != null)
@@ -2357,17 +2475,21 @@ namespace EventSlash
                 fbxHolder.transform.SetParent(transform, false);
                 fbxHolder.SetActive(false);
 
-                Material[] pomMats = { skinMat, crownMat, pithMat, arilMat };
+                Dictionary<string, Material> pomMatMap = new Dictionary<string, Material>
+                {
+                    { "Mat_Pomegranate_Skin", skinMat },
+                    { "Mat_Pomegranate_Crown", crownMat },
+                    { "Mat_Pomegranate_Pith", pithMat },
+                    { "Mat_Pomegranate_Aril", arilMat }
+                };
 
                 GameObject wInst = Instantiate(wholeFbx, fbxHolder.transform);
                 wInst.name = "Pomegranate_Whole";
-                MeshRenderer wMr = wInst.GetComponentInChildren<MeshRenderer>();
-                if (wMr != null) wMr.sharedMaterials = pomMats;
+                ApplyMappedMaterials(wInst, pomMatMap, new[] { skinMat, crownMat });
 
                 GameObject pInst = Instantiate(pieceFbx, fbxHolder.transform);
                 pInst.name = "Pomegranate_Piece";
-                MeshRenderer pMr = pInst.GetComponentInChildren<MeshRenderer>();
-                if (pMr != null) pMr.sharedMaterials = pomMats;
+                ApplyMappedMaterials(pInst, pomMatMap, new[] { skinMat, pithMat, arilMat });
 
                 pomegranateDefinition.wholePrefab = wInst;
                 pomegranateDefinition.halfAPrefab = pInst;
@@ -2457,6 +2579,27 @@ namespace EventSlash
             pomegranateDefinition.halfAPrefab = pieceObj;
             pomegranateDefinition.halfBPrefab = pieceObj;
             pomegranateDefinition.piecePrefab = pieceObj;
+        }
+
+        private static void ApplyMappedMaterials(GameObject inst, Dictionary<string, Material> matMap, Material[] fallbackOrder)
+        {
+            MeshRenderer mr = inst.GetComponentInChildren<MeshRenderer>();
+            if (mr == null) return;
+
+            Material[] shared = mr.sharedMaterials;
+            for (int i = 0; i < shared.Length; i++)
+            {
+                string cleanName = shared[i] != null ? shared[i].name.Split('.')[0].Replace(" (Instance)", "").Trim() : "";
+                if (!string.IsNullOrEmpty(cleanName) && matMap.TryGetValue(cleanName, out Material mapped))
+                {
+                    shared[i] = mapped;
+                }
+                else if (fallbackOrder != null && i < fallbackOrder.Length)
+                {
+                    shared[i] = fallbackOrder[i];
+                }
+            }
+            mr.sharedMaterials = shared;
         }
 
         private static Material CreateLitMaterial(Shader shader, Color col, float smoothness)

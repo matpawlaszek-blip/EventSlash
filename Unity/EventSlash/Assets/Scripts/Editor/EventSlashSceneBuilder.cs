@@ -632,7 +632,10 @@ namespace EventSlash.Editor
                 { "Mat_Pomegranate_Skin", (new Color(0.76f, 0.07f, 0.16f), 0.65f) },
                 { "Mat_Pomegranate_Crown", (new Color(0.58f, 0.05f, 0.11f), 0.52f) },
                 { "Mat_Pomegranate_Pith", (new Color(0.96f, 0.88f, 0.74f), 0.38f) },
-                { "Mat_Pomegranate_Aril", (new Color(0.92f, 0.04f, 0.14f), 0.86f) }
+                { "Mat_Pomegranate_Aril", (new Color(0.92f, 0.04f, 0.14f), 0.86f) },
+                { "Mat_Strawberry_Skin", (new Color(0.90f, 0.06f, 0.12f), 0.72f) },
+                { "Mat_Strawberry_Flesh", (new Color(0.90f, 0.06f, 0.12f), 0.65f) },
+                { "Mat_Strawberry_Seed", (new Color(0.96f, 0.82f, 0.22f), 0.65f) }
             };
 
             var created = new Dictionary<string, Material>();
@@ -663,6 +666,7 @@ namespace EventSlash.Editor
                 "Apple_Whole", "Apple_Half_A", "Apple_Half_B",
                 "Orange_Whole", "Orange_Half_A", "Orange_Half_B",
                 "Banana_Whole", "Banana_Half_A", "Banana_Half_B",
+                "Strawberry_Whole", "Strawberry_Half_A", "Strawberry_Half_B",
                 "Bomb_Whole", "Bomb_Half_A", "Bomb_Half_B",
                 "Pomegranate_Whole", "Pomegranate_Half_A", "Pomegranate_Half_B", "Pomegranate_Piece"
             };
@@ -813,6 +817,15 @@ namespace EventSlash.Editor
                     halfBPrefab = prefabs.GetValueOrDefault("Banana_Half_B"),
                     juiceColor = new Color(0.98f, 0.88f, 0.20f),
                     scale = 1.45f
+                },
+                new FruitDefinition
+                {
+                    name = "Truskawka",
+                    wholePrefab = prefabs.GetValueOrDefault("Strawberry_Whole"),
+                    halfAPrefab = prefabs.GetValueOrDefault("Strawberry_Half_A"),
+                    halfBPrefab = prefabs.GetValueOrDefault("Strawberry_Half_B"),
+                    juiceColor = new Color(0.92f, 0.08f, 0.16f),
+                    scale = 1.38f
                 }
             };
 
@@ -1021,7 +1034,7 @@ namespace EventSlash.Editor
                 new Color(1.0f, 0.96f, 0.84f), new Color(0.16f, 0.06f, 0.02f),
                 new Vector2(0f, 132f), new Vector2(760f, 36f), 2.8f);
             Slider minSpeedSlider = CreateSlider(trackingTabPanel.transform, "MinHandSpeedSlider",
-                new Vector2(0f, 96f), new Vector2(600f, 30f), 80f, 320f, 155f, false);
+                new Vector2(0f, 96f), new Vector2(600f, 30f), 80f, 800f, 155f, false);
 
             Text minThickLabel = CreateNinjaText(trackingTabPanel.transform, "MinHandThicknessValueText",
                 "GĘSTOŚĆ DETEKCJI DŁONI: 260", ninjaImpact, 25, FontStyle.Normal,

@@ -82,7 +82,7 @@ class MetavisionHandTracker:
         self.width = width
         self.height = height
         self.denoise = bool(denoise)
-        self.min_speed = float(np.clip(min_speed, 50.0, 450.0))
+        self.min_speed = float(np.clip(min_speed, 50.0, 800.0))
         self.min_thickness = float(np.clip(min_thickness, 100.0, 600.0))
         self.max_hands = 0 if int(max_hands) <= 0 else int(max_hands)
         self.sway_filter = bool(sway_filter)
