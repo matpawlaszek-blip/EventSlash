@@ -628,7 +628,11 @@ namespace EventSlash.Editor
                 { "Mat_Bomb_DangerRed", (new Color(0.92f, 0.14f, 0.09f), 0.68f) },
                 { "Mat_Bomb_Cap", (new Color(0.76f, 0.56f, 0.22f), 0.75f) },
                 { "Mat_Bomb_Fuse", (new Color(0.72f, 0.58f, 0.36f), 0.25f) },
-                { "Mat_Bomb_Spark", (new Color(1.00f, 0.72f, 0.12f), 0.90f) }
+                { "Mat_Bomb_Spark", (new Color(1.00f, 0.72f, 0.12f), 0.90f) },
+                { "Mat_Pomegranate_Skin", (new Color(0.76f, 0.07f, 0.16f), 0.65f) },
+                { "Mat_Pomegranate_Crown", (new Color(0.58f, 0.05f, 0.11f), 0.52f) },
+                { "Mat_Pomegranate_Pith", (new Color(0.96f, 0.88f, 0.74f), 0.38f) },
+                { "Mat_Pomegranate_Aril", (new Color(0.92f, 0.04f, 0.14f), 0.86f) }
             };
 
             var created = new Dictionary<string, Material>();
@@ -659,7 +663,8 @@ namespace EventSlash.Editor
                 "Apple_Whole", "Apple_Half_A", "Apple_Half_B",
                 "Orange_Whole", "Orange_Half_A", "Orange_Half_B",
                 "Banana_Whole", "Banana_Half_A", "Banana_Half_B",
-                "Bomb_Whole", "Bomb_Half_A", "Bomb_Half_B"
+                "Bomb_Whole", "Bomb_Half_A", "Bomb_Half_B",
+                "Pomegranate_Whole", "Pomegranate_Half_A", "Pomegranate_Half_B", "Pomegranate_Piece"
             };
 
             var prefabs = new Dictionary<string, GameObject>();
@@ -821,6 +826,17 @@ namespace EventSlash.Editor
                 scale = 1.35f
             };
             gameMgr.bombSpawnChance = 0.18f;
+
+            gameMgr.pomegranateDefinition = new FruitDefinition
+            {
+                name = "Granat",
+                wholePrefab = prefabs.GetValueOrDefault("Pomegranate_Whole"),
+                halfAPrefab = prefabs.GetValueOrDefault("Pomegranate_Half_A"),
+                halfBPrefab = prefabs.GetValueOrDefault("Pomegranate_Half_B"),
+                piecePrefab = prefabs.GetValueOrDefault("Pomegranate_Piece"),
+                juiceColor = new Color(0.92f, 0.06f, 0.18f),
+                scale = 1.48f
+            };
 
             SlashTrailVisualizer trailVis = controllerObj.AddComponent<SlashTrailVisualizer>();
             trailVis.targetCamera = mainCam;

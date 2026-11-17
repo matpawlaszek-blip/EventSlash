@@ -17,6 +17,7 @@ namespace EventSlash
         public GameObject wholePrefab;
         public GameObject halfAPrefab;
         public GameObject halfBPrefab;
+        public GameObject piecePrefab;
         public Color juiceColor = Color.red;
         public float scale = 1.25f;
     }
@@ -59,6 +60,9 @@ namespace EventSlash
         public bool bombsEnabled = DefaultBombsEnabled;
         [Range(0.05f, 0.45f)]
         public float bombSpawnChance = DefaultBombSpawnChance;
+
+        [Header("Pomegranate Prefab (Multi-Slice Frenzy)")]
+        public FruitDefinition pomegranateDefinition;
 
         [Header("Gameplay Spawning Settings")]
         public float spawnIntervalMin = 1.15f;
@@ -167,7 +171,22 @@ namespace EventSlash
         private Vector2 _comboBaseAnchoredPos = new Vector2(0f, 315f);
         private float _scorePopTimer;
         private int _wavesSinceLastBomb;
+        private int _wavesSinceLastPomegranate;
         private bool _lastGameOverWasBomb;
+
+        // Pomegranate Frenzy camera & slow-motion state
+        private FruitItem _activePomegranate;
+        private float _targetTimeScale = 1.0f;
+        private Vector3 _baseCamPos = new Vector3(0f, 0f, -10f);
+        private float _baseCamOrtho = 5.0f;
+        private Vector3 _currentCamFocus = new Vector3(0f, 0f, -10f);
+        private Vector3 _targetCamFocus = new Vector3(0f, 0f, -10f);
+        private float _currentCamOrtho = 5.0f;
+        private float _targetCamOrtho = 5.0f;
+        private float _currentCamTilt;
+        private float _targetCamTilt;
+        private float _camShakeTimer;
+        private float _camShakeIntensity;
 
         public bool IsEnglish => languageIndex == 0;
 
@@ -189,6 +208,7 @@ namespace EventSlash
             {
                 _comboBaseAnchoredPos = comboBannerRect.anchoredPosition;
             }
+            EnsurePomegranateDefinitionReady();
             EnsureUIWired();
             SyncAllSettingsUI();
             SelectSettingsTab(SettingsTab.General);
@@ -297,6 +317,9 @@ namespace EventSlash
                     case "BANAN":
                     case "BANANA":
                         return "BANANA";
+                    case "GRANAT":
+                    case "POMEGRANATE":
+                        return "POMEGRANATE";
                     case "BOMBA":
                     case "BOMB":
                         return "BOMB";
@@ -322,6 +345,9 @@ namespace EventSlash
                     case "BANANA":
                     case "BANAN":
                         return "BANAN";
+                    case "POMEGRANATE":
+                    case "GRANAT":
+                        return "GRANAT";
                     case "BOMB":
                     case "BOMBA":
                         return "BOMBA";
@@ -559,18 +585,98 @@ namespace EventSlash
 
             if (currentState == GameState.Playing)
             {
-                _nextSpawnTimer -= Time.deltaTime;
-                if (_nextSpawnTimer <= 0f)
+                // Pause wave timer while a Pomegranate Frenzy is actively being sliced
+                if (_activePomegranate == null || !_activePomegranate.IsInPomegranateFrenzy)
                 {
-                    SpawnFruitWave();
-                    float difficultyFactor = Mathf.Clamp(1.0f - (score * 0.008f), 0.55f, 1.0f);
-                    float rateDiv = Mathf.Max(0.35f, spawnRateMultiplier);
-                    _nextSpawnTimer = (UnityEngine.Random.Range(spawnIntervalMin, spawnIntervalMax) * difficultyFactor) / rateDiv;
+                    _nextSpawnTimer -= Time.deltaTime;
+                    if (_nextSpawnTimer <= 0f)
+                    {
+                        SpawnFruitWave();
+                        float difficultyFactor = Mathf.Clamp(1.0f - (score * 0.008f), 0.55f, 1.0f);
+                        float rateDiv = Mathf.Max(0.35f, spawnRateMultiplier);
+                        _nextSpawnTimer = (UnityEngine.Random.Range(spawnIntervalMin, spawnIntervalMax) * difficultyFactor) / rateDiv;
+                    }
                 }
 
+                UpdateCameraAndTimeEffects();
                 AnimateScorePop();
                 AnimateComboBanner();
                 UpdateHUD();
+            }
+        }
+
+        private void UpdateCameraAndTimeEffects()
+        {
+            float udt = Time.unscaledDeltaTime;
+
+            if (_activePomegranate == null || !_activePomegranate.IsInPomegranateFrenzy)
+            {
+                _targetTimeScale = 1.0f;
+                _targetCamOrtho = _baseCamOrtho;
+                _targetCamTilt = 0f;
+                _targetCamFocus = _baseCamPos;
+            }
+            else
+            {
+                _targetCamFocus = new Vector3(
+                    Mathf.Clamp(_activePomegranate.transform.position.x * 0.30f, -1.7f, 1.7f),
+                    Mathf.Clamp(_activePomegranate.transform.position.y * 0.25f, -0.95f, 0.95f),
+                    _baseCamPos.z
+                );
+            }
+
+            Time.timeScale = Mathf.Lerp(Time.timeScale, _targetTimeScale, udt * 12.0f);
+            if (Mathf.Abs(Time.timeScale - _targetTimeScale) < 0.01f)
+            {
+                Time.timeScale = _targetTimeScale;
+            }
+            Time.fixedDeltaTime = 0.02f * Time.timeScale;
+
+            Camera cam = Camera.main;
+            if (cam == null) return;
+
+            _currentCamOrtho = Mathf.Lerp(_currentCamOrtho, _targetCamOrtho, udt * 9.5f);
+            _currentCamTilt = Mathf.Lerp(_currentCamTilt, _targetCamTilt, udt * 9.5f);
+            _currentCamFocus = Vector3.Lerp(_currentCamFocus, _targetCamFocus, udt * 9.5f);
+
+            Vector3 shakeOffset = Vector3.zero;
+            float shakeRoll = 0f;
+            if (_camShakeTimer > 0f)
+            {
+                _camShakeTimer -= udt;
+                float damper = Mathf.Clamp01(_camShakeTimer / 0.20f);
+                Vector2 rnd = UnityEngine.Random.insideUnitCircle * (_camShakeIntensity * damper);
+                shakeOffset = new Vector3(rnd.x, rnd.y, 0f);
+                shakeRoll = UnityEngine.Random.Range(-1.8f, 1.8f) * (_camShakeIntensity * 3.5f * damper);
+            }
+
+            cam.orthographicSize = _currentCamOrtho;
+            cam.transform.position = _currentCamFocus + shakeOffset;
+            cam.transform.rotation = Quaternion.Euler(0f, 0f, _currentCamTilt + shakeRoll);
+        }
+
+        private void ResetTimeAndCameraImmediate()
+        {
+            _activePomegranate = null;
+            _targetTimeScale = 1.0f;
+            Time.timeScale = 1.0f;
+            Time.fixedDeltaTime = 0.02f;
+
+            _currentCamOrtho = _baseCamOrtho;
+            _targetCamOrtho = _baseCamOrtho;
+            _currentCamTilt = 0f;
+            _targetCamTilt = 0f;
+            _currentCamFocus = _baseCamPos;
+            _targetCamFocus = _baseCamPos;
+            _camShakeTimer = 0f;
+            _camShakeIntensity = 0f;
+
+            Camera cam = Camera.main;
+            if (cam != null)
+            {
+                cam.orthographicSize = _baseCamOrtho;
+                cam.transform.position = _baseCamPos;
+                cam.transform.rotation = Quaternion.identity;
             }
         }
 
@@ -579,7 +685,7 @@ namespace EventSlash
             if (scoreText == null) return;
             if (_scorePopTimer > 0f)
             {
-                _scorePopTimer -= Time.deltaTime;
+                _scorePopTimer -= Time.unscaledDeltaTime;
                 float t = Mathf.Clamp01(_scorePopTimer / 0.22f);
                 float scale = 1.0f + 0.36f * Mathf.Sin(t * Mathf.PI);
                 scoreText.rectTransform.localScale = new Vector3(scale, scale, 1f);
@@ -594,7 +700,7 @@ namespace EventSlash
         {
             if (_comboDisplayTimer > 0f)
             {
-                _comboDisplayTimer -= Time.deltaTime;
+                _comboDisplayTimer -= Time.unscaledDeltaTime;
                 float elapsed = _comboTotalDuration - _comboDisplayTimer;
                 float norm = Mathf.Clamp01(elapsed / _comboTotalDuration);
 
@@ -667,6 +773,7 @@ namespace EventSlash
         public void ShowMainMenu()
         {
             currentState = GameState.MainMenu;
+            ResetTimeAndCameraImmediate();
             ClearActiveFruits();
             HideComboBannerImmediate();
 
@@ -753,6 +860,7 @@ namespace EventSlash
 
         private void StartGameplay(EventStreamMode mode)
         {
+            ResetTimeAndCameraImmediate();
             ClearActiveFruits();
             HideComboBannerImmediate();
             score = 0;
@@ -761,6 +869,7 @@ namespace EventSlash
             _comboDisplayTimer = 0f;
             _scorePopTimer = 0f;
             _wavesSinceLastBomb = 0;
+            _wavesSinceLastPomegranate = 0;
             _nextSpawnTimer = 0.85f;
             currentState = GameState.Playing;
 
@@ -799,7 +908,7 @@ namespace EventSlash
             {
                 FruitDefinition def = fruitTypes[UnityEngine.Random.Range(0, fruitTypes.Count)];
                 if (def.wholePrefab == null) continue;
-                SpawnSingleProjectile(def, false, halfWidth, i * 0.45f);
+                SpawnSingleProjectile(def, false, false, halfWidth, i * 0.45f);
             }
 
             if (bombsEnabled)
@@ -810,12 +919,24 @@ namespace EventSlash
                 if (shouldSpawnBomb)
                 {
                     _wavesSinceLastBomb = 0;
-                    SpawnSingleProjectile(bombDefinition, true, halfWidth, 0.25f);
+                    SpawnSingleProjectile(bombDefinition, true, false, halfWidth, 0.25f);
                 }
+            }
+
+            // Occasionally spawn the multi-slice Pomegranate (rare special event!)
+            _wavesSinceLastPomegranate++;
+            bool canSpawnPom = _activePomegranate == null &&
+                               pomegranateDefinition != null &&
+                               pomegranateDefinition.wholePrefab != null &&
+                               (_wavesSinceLastPomegranate >= 18 || (_wavesSinceLastPomegranate >= 10 && UnityEngine.Random.value < 0.10f));
+            if (canSpawnPom)
+            {
+                _wavesSinceLastPomegranate = 0;
+                SpawnSingleProjectile(pomegranateDefinition, false, true, halfWidth * 0.65f, 0.15f);
             }
         }
 
-        private void SpawnSingleProjectile(FruitDefinition def, bool isBomb, float halfWidth, float yOffset)
+        private void SpawnSingleProjectile(FruitDefinition def, bool isBomb, bool isPomegranate, float halfWidth, float yOffset)
         {
             float spawnX = UnityEngine.Random.Range(-halfWidth, halfWidth);
             Vector3 pos = new Vector3(spawnX, spawnY - yOffset, spawnZ + UnityEngine.Random.Range(-0.25f, 0.25f));
@@ -825,7 +946,8 @@ namespace EventSlash
 
             float sizeMult = isBomb ? 1.0f : Mathf.Clamp(fruitSizeMultiplier, 0.7f, 1.5f);
             GameObject obj = Instantiate(def.wholePrefab, pos, rot);
-            obj.name = isBomb ? "Bomb_Projectile" : $"Fruit_{def.name}";
+            obj.SetActive(true);
+            obj.name = isBomb ? "Bomb_Projectile" : (isPomegranate ? "Pomegranate_Projectile" : $"Fruit_{def.name}");
             obj.transform.localScale = Vector3.one * (def.scale * sizeMult);
 
             FruitItem item = obj.GetComponent<FruitItem>();
@@ -833,19 +955,28 @@ namespace EventSlash
 
             item.fruitName = def.name;
             item.isBomb = isBomb;
+            item.isPomegranate = isPomegranate;
             item.halfAPrefab = def.halfAPrefab;
             item.halfBPrefab = def.halfBPrefab;
+            item.piecePrefab = def.piecePrefab;
             item.juiceColor = def.juiceColor;
-            item.viewportHitRadius = isBomb ? 0.065f : (0.085f * sizeMult);
+            item.viewportHitRadius = isBomb ? 0.065f : (isPomegranate ? 0.105f * sizeMult : 0.085f * sizeMult);
 
-            float targetX = UnityEngine.Random.Range(-halfWidth * 0.45f, halfWidth * 0.45f);
-            float vx = (targetX - spawnX) * UnityEngine.Random.Range(0.45f, 0.72f);
-            float vy = UnityEngine.Random.Range(minLaunchSpeedY, maxLaunchSpeedY);
+            float targetX = UnityEngine.Random.Range(-halfWidth * 0.40f, halfWidth * 0.40f);
+            float vx = (targetX - spawnX) * UnityEngine.Random.Range(0.45f, 0.68f);
+            float vy = isPomegranate
+                ? UnityEngine.Random.Range(13.8f, 14.8f)
+                : UnityEngine.Random.Range(minLaunchSpeedY, maxLaunchSpeedY);
 
             item.velocity = new Vector3(vx, vy, 0f);
             item.angularVelocity = isBomb
                 ? new Vector3(UnityEngine.Random.Range(-65f, 65f), UnityEngine.Random.Range(-140f, 140f), UnityEngine.Random.Range(-90f, 90f))
                 : new Vector3(UnityEngine.Random.Range(-150f, 150f), UnityEngine.Random.Range(-180f, 180f), UnityEngine.Random.Range(-150f, 150f));
+
+            if (isPomegranate)
+            {
+                _activePomegranate = item;
+            }
         }
 
         public void OnFruitSliced(FruitItem fruit, Vector3 worldPos)
@@ -898,9 +1029,96 @@ namespace EventSlash
             UpdateHUD();
         }
 
+        public void OnPomegranateSliced(FruitItem pom, int sliceCount, Vector2 slashDir)
+        {
+            if (currentState != GameState.Playing) return;
+
+            _activePomegranate = pom;
+            _targetTimeScale = 0.25f;
+
+            // Zoom in closer, tilt camera, and trigger a crisp camera shake on every slice!
+            _targetCamOrtho = Mathf.Clamp(4.05f - sliceCount * 0.045f, 3.60f, 4.10f);
+            float baseTilt = 5.5f;
+            float rock = (sliceCount % 2 == 0 ? 1.8f : -1.8f);
+            _targetCamTilt = baseTilt + rock;
+            _camShakeTimer = 0.19f;
+            _camShakeIntensity = Mathf.Clamp(0.20f + sliceCount * 0.015f, 0.20f, 0.40f);
+
+            score += 1;
+            _scorePopTimer = 0.22f;
+            if (score > bestScore)
+            {
+                bestScore = score;
+                PlayerPrefs.SetInt("EventSlash_BestScore", bestScore);
+            }
+
+            ShowNinjaCallout(
+                IsEnglish ? "POMEGRANATE FRENZY!" : "FURIA GRANATU!",
+                IsEnglish ? $"SLASH x{sliceCount}!" : $"CIĘCIE x{sliceCount}!",
+                new Color(1.0f, 0.22f, 0.42f),
+                new Color(1.0f, 0.92f, 0.25f),
+                0.85f
+            );
+
+            UpdateHUD();
+        }
+
+        public void OnPomegranateExploded(FruitItem pom, int totalSlices)
+        {
+            if (currentState != GameState.Playing) return;
+
+            _activePomegranate = null;
+            _targetTimeScale = 1.0f;
+            Time.timeScale = 1.0f;
+            Time.fixedDeltaTime = 0.02f;
+
+            _targetCamOrtho = _baseCamOrtho;
+            _targetCamTilt = 0f;
+            _targetCamFocus = _baseCamPos;
+            _camShakeTimer = 0.42f;
+            _camShakeIntensity = 0.52f;
+
+            Vector3 origin = pom != null ? pom.transform.position : Vector3.zero;
+
+            // Slice every active fruit on screen and make all active bombs disappear!
+            FruitItem[] allItems = FindObjectsByType<FruitItem>(FindObjectsSortMode.None);
+            foreach (FruitItem item in allItems)
+            {
+                if (item == null || item == pom) continue;
+                if (item.isBomb)
+                {
+                    item.DisappearBombWithSmoke();
+                }
+                else if (!item.isPomegranate)
+                {
+                    item.ForceSliceFromExplosion(origin);
+                }
+            }
+
+            int bonus = Mathf.Max(3, totalSlices);
+            score += bonus;
+            _scorePopTimer = 0.28f;
+            if (score > bestScore)
+            {
+                bestScore = score;
+                PlayerPrefs.SetInt("EventSlash_BestScore", bestScore);
+            }
+
+            ShowNinjaCallout(
+                IsEnglish ? "MEGA EXPLOSION!" : "MEGA WYBUCH!",
+                IsEnglish ? $"{totalSlices} HITS!   +{bonus} PTS" : $"{totalSlices} CIĘĆ!   +{bonus} PKT",
+                new Color(1.0f, 0.18f, 0.35f),
+                new Color(1.0f, 0.95f, 0.28f),
+                1.45f
+            );
+
+            UpdateHUD();
+        }
+
         public void OnBombSliced(FruitItem bomb, Vector3 worldPos)
         {
             if (currentState != GameState.Playing) return;
+            ResetTimeAndCameraImmediate();
             _lastGameOverWasBomb = true;
             TriggerGameOver(IsEnglish ? "BOMB EXPLOSION!" : "WYBUCH BOMBY!");
         }
@@ -933,6 +1151,7 @@ namespace EventSlash
         private void TriggerGameOver(string titleReason = "KONIEC GRY")
         {
             currentState = GameState.GameOver;
+            ResetTimeAndCameraImmediate();
             ClearActiveFruits();
             HideComboBannerImmediate();
 
@@ -1842,6 +2061,161 @@ namespace EventSlash
             slider.value = defaultVal;
 
             return slider;
+        }
+
+        private void EnsurePomegranateDefinitionReady()
+        {
+            if (pomegranateDefinition != null && pomegranateDefinition.wholePrefab != null && pomegranateDefinition.piecePrefab != null)
+            {
+                return;
+            }
+
+            pomegranateDefinition = new FruitDefinition
+            {
+                name = "Granat",
+                juiceColor = new Color(0.92f, 0.06f, 0.18f),
+                scale = 1.48f
+            };
+
+            Shader litShader = Shader.Find("Universal Render Pipeline/Lit");
+            if (litShader == null) litShader = Shader.Find("Standard");
+
+            Material skinMat = CreateLitMaterial(litShader, new Color(0.76f, 0.06f, 0.16f), 0.65f);
+            Material crownMat = CreateLitMaterial(litShader, new Color(0.56f, 0.04f, 0.10f), 0.50f);
+            Material pithMat = CreateLitMaterial(litShader, new Color(0.96f, 0.88f, 0.74f), 0.35f);
+            Material arilMat = CreateLitMaterial(litShader, new Color(0.94f, 0.04f, 0.15f), 0.85f);
+
+#if UNITY_EDITOR
+            GameObject wholePrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Fruits/Pomegranate_Whole.prefab");
+            GameObject halfAPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Fruits/Pomegranate_Half_A.prefab");
+            GameObject halfBPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Fruits/Pomegranate_Half_B.prefab");
+            GameObject piecePrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Fruits/Pomegranate_Piece.prefab");
+            if (wholePrefab != null && piecePrefab != null)
+            {
+                pomegranateDefinition.wholePrefab = wholePrefab;
+                pomegranateDefinition.halfAPrefab = halfAPrefab;
+                pomegranateDefinition.halfBPrefab = halfBPrefab;
+                pomegranateDefinition.piecePrefab = piecePrefab;
+                return;
+            }
+
+            GameObject wholeFbx = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Models/Fruits/Pomegranate_Whole.fbx");
+            GameObject pieceFbx = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Models/Fruits/Pomegranate_Piece.fbx");
+            if (wholeFbx != null && pieceFbx != null)
+            {
+                GameObject fbxHolder = new GameObject("PomegranateFbxTemplates");
+                fbxHolder.transform.SetParent(transform, false);
+                fbxHolder.SetActive(false);
+
+                Material[] pomMats = { skinMat, crownMat, pithMat, arilMat };
+
+                GameObject wInst = Instantiate(wholeFbx, fbxHolder.transform);
+                wInst.name = "Pomegranate_Whole";
+                MeshRenderer wMr = wInst.GetComponentInChildren<MeshRenderer>();
+                if (wMr != null) wMr.sharedMaterials = pomMats;
+
+                GameObject pInst = Instantiate(pieceFbx, fbxHolder.transform);
+                pInst.name = "Pomegranate_Piece";
+                MeshRenderer pMr = pInst.GetComponentInChildren<MeshRenderer>();
+                if (pMr != null) pMr.sharedMaterials = pomMats;
+
+                pomegranateDefinition.wholePrefab = wInst;
+                pomegranateDefinition.halfAPrefab = pInst;
+                pomegranateDefinition.halfBPrefab = pInst;
+                pomegranateDefinition.piecePrefab = pInst;
+                return;
+            }
+#endif
+
+            // Build procedural 3D Pomegranate & Piece templates at runtime as a universal fallback
+
+            GameObject templateHolder = new GameObject("PomegranateRuntimeTemplates");
+            templateHolder.transform.SetParent(transform, false);
+            templateHolder.SetActive(false);
+
+            // 1. Whole Pomegranate template (body sphere + 6-pointed calyx crown)
+            GameObject wholeObj = new GameObject("Pomegranate_Whole_Template");
+            wholeObj.transform.SetParent(templateHolder.transform, false);
+
+            GameObject body = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            body.name = "Body";
+            body.transform.SetParent(wholeObj.transform, false);
+            body.transform.localScale = new Vector3(1.12f, 1.06f, 1.12f);
+            Destroy(body.GetComponent<Collider>());
+            body.GetComponent<MeshRenderer>().sharedMaterial = skinMat;
+
+            GameObject crownBase = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            crownBase.name = "CrownBase";
+            crownBase.transform.SetParent(wholeObj.transform, false);
+            crownBase.transform.localPosition = new Vector3(0f, 0.54f, 0f);
+            crownBase.transform.localScale = new Vector3(0.34f, 0.10f, 0.34f);
+            Destroy(crownBase.GetComponent<Collider>());
+            crownBase.GetComponent<MeshRenderer>().sharedMaterial = crownMat;
+
+            for (int i = 0; i < 6; i++)
+            {
+                float ang = i * 60f * Mathf.Deg2Rad;
+                GameObject tip = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                tip.name = $"CrownPetal_{i}";
+                tip.transform.SetParent(wholeObj.transform, false);
+                tip.transform.localPosition = new Vector3(Mathf.Cos(ang) * 0.14f, 0.63f, Mathf.Sin(ang) * 0.14f);
+                tip.transform.localRotation = Quaternion.Euler(22f, -i * 60f, 45f);
+                tip.transform.localScale = new Vector3(0.11f, 0.15f, 0.06f);
+                Destroy(tip.GetComponent<Collider>());
+                tip.GetComponent<MeshRenderer>().sharedMaterial = crownMat;
+            }
+
+            // 2. Exploded Pomegranate Piece template (crimson rind wedge + pith + glossy ruby aril seeds)
+            GameObject pieceObj = new GameObject("Pomegranate_Piece_Template");
+            pieceObj.transform.SetParent(templateHolder.transform, false);
+
+            GameObject rindChunk = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            rindChunk.name = "RindWedge";
+            rindChunk.transform.SetParent(pieceObj.transform, false);
+            rindChunk.transform.localScale = new Vector3(0.46f, 0.28f, 0.38f);
+            Destroy(rindChunk.GetComponent<Collider>());
+            rindChunk.GetComponent<MeshRenderer>().sharedMaterial = skinMat;
+
+            GameObject pithLayer = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            pithLayer.name = "PithCore";
+            pithLayer.transform.SetParent(pieceObj.transform, false);
+            pithLayer.transform.localPosition = new Vector3(0f, 0.06f, 0f);
+            pithLayer.transform.localScale = new Vector3(0.38f, 0.22f, 0.32f);
+            Destroy(pithLayer.GetComponent<Collider>());
+            pithLayer.GetComponent<MeshRenderer>().sharedMaterial = pithMat;
+
+            Vector3[] arilOffsets =
+            {
+                new Vector3(0f, 0.15f, 0f),
+                new Vector3(0.10f, 0.12f, 0.05f),
+                new Vector3(-0.10f, 0.12f, 0.04f),
+                new Vector3(0.06f, 0.12f, -0.07f),
+                new Vector3(-0.07f, 0.11f, -0.06f)
+            };
+            for (int i = 0; i < arilOffsets.Length; i++)
+            {
+                GameObject seed = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                seed.name = $"Aril_{i}";
+                seed.transform.SetParent(pieceObj.transform, false);
+                seed.transform.localPosition = arilOffsets[i];
+                seed.transform.localScale = new Vector3(0.13f, 0.15f, 0.11f);
+                Destroy(seed.GetComponent<Collider>());
+                seed.GetComponent<MeshRenderer>().sharedMaterial = arilMat;
+            }
+
+            pomegranateDefinition.wholePrefab = wholeObj;
+            pomegranateDefinition.halfAPrefab = pieceObj;
+            pomegranateDefinition.halfBPrefab = pieceObj;
+            pomegranateDefinition.piecePrefab = pieceObj;
+        }
+
+        private static Material CreateLitMaterial(Shader shader, Color col, float smoothness)
+        {
+            Material m = new Material(shader);
+            m.color = col;
+            if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", col);
+            if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", smoothness);
+            return m;
         }
     }
 }

@@ -94,11 +94,16 @@ namespace EventSlash
             EnsureTrailCapacity(clusterCount);
 
             Vector3[] targetPositions = new Vector3[clusterCount];
+            float worldHeight = 10.0f;
+            float worldWidth = worldHeight * targetCamera.aspect;
             for (int c = 0; c < clusterCount; c++)
             {
                 SlashCluster sc = _clusters[c];
-                Vector3 wp = targetCamera.ViewportToWorldPoint(new Vector3(sc.viewportPos.x, sc.viewportPos.y, distFromCam));
-                wp.z = planeZ;
+                Vector3 wp = new Vector3(
+                    (sc.viewportPos.x - 0.5f) * worldWidth,
+                    (sc.viewportPos.y - 0.5f) * worldHeight,
+                    planeZ
+                );
                 targetPositions[c] = wp;
             }
 
